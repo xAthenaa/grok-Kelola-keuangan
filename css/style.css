@@ -114,3 +114,7 @@ dialog .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px;fl
 th.nowrap{white-space:nowrap}
 @media (max-width:639px){.hide-narrow{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
 .bottomnav a{white-space:nowrap;overflow:visible}
+/* Bocil: header sticky dengan latar penuh selebar konten + bayangan, di atas konten */
+.topbar{margin:0 -12px;padding:12px;background:#F0FDF4;box-shadow:0 1px 3px rgba(0,0,0,.08);z-index:20}
+@media (min-width:640px){.topbar{margin:0 -24px;padding:12px 24px}}
+@media (min-width:1024px){.topbar{margin:0 -32px;padding:12px 32px}.sidebar{z-index:21}}

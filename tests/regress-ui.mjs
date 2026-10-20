@@ -170,6 +170,15 @@ await p.screenshot({ path: '/workspace/kelola-keuangan/site-screens/mobile-375-a
 await p.setViewportSize({ width: 1280, height: 900 }); await p.waitForTimeout(200);
 check('1280: header shows full "Jatah tetap" (suffix visible)', (await p.evaluate(() => document.querySelector('table.daily thead .hide-narrow').getBoundingClientRect().width)) > 10);
 await p.setViewportSize({ width: 360, height: 900 });
+// Bocil: header sticky berlatar solid penuh, bayangan, di atas konten (375/768/1280)
+for (const w of [375, 768, 1280]) { await p.setViewportSize({ width: w, height: 700 }); await at('23', '#anggaran');
+  await p.evaluate(() => { const r = document.querySelector('table.daily tbody tr'); window.scrollTo(0, r.getBoundingClientRect().top + scrollY - 30); }); await p.waitForTimeout(150);
+  const st = await p.evaluate(() => { const h = document.querySelector('.topbar'); const cs = getComputedStyle(h); const r = h.getBoundingClientRect(); const c = document.querySelector('.content').getBoundingClientRect();
+    const m = cs.backgroundColor.match(/rgba?\(([^)]+)\)/)[1].split(',').map(Number); const pts = [c.left + 2, (c.left + c.right) / 2, c.right - 2].map((x) => document.elementFromPoint(x, r.bottom - 2));
+    return { bg: cs.backgroundColor, alpha: m.length === 4 ? m[3] : 1, pos: cs.position, top: r.top, z: +cs.zIndex, shadow: cs.boxShadow !== 'none', full: Math.abs(r.left - c.left) < 1 && Math.abs(r.right - c.right) < 1, covered: pts.every((e) => e && e.closest('.topbar')) }; });
+  check(`${w}px: sticky header opaque #F0FDF4, full width, shadow, above content`, st.alpha === 1 && st.bg === 'rgb(240, 253, 244)' && st.pos === 'sticky' && st.top === 0 && st.z >= 10 && st.shadow && st.full && st.covered, JSON.stringify(st));
+  if (w === 375) await p.screenshot({ path: '/workspace/kelola-keuangan/site-screens/sticky-header-375-scrolled.png' }); }
+await p.setViewportSize({ width: 360, height: 900 });
 // Bocil: sorotan baris "hari ini" menutup SELURUH baris (semua sel), juga di 360px
 for (const w of [360, 1280]) { await p.setViewportSize({ width: w, height: 900 }); await p.waitForTimeout(200);
   const hl = await p.evaluate(() => { const tr = document.querySelector('table.daily tr.today'); if (!tr) return null;
