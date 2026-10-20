@@ -34,6 +34,22 @@ function ut80(extra) { const d = D(); if (extra) ex(d, '2026-10-15', 90000); sav
   eq('G-06 weekly recap w/ monthly plan = 7×80.000 = 560.000; monthly recap = 2.480.000', [R.portion, M.portion], [560000, 2480000]); }
 { const { d } = ut60(); ex(d, '2026-10-21', 50000); eq('G-07 "(kurang Rp1)" at 550.000', save(d, '2026-10-22', 'weekly', 550000, 300000).error, 'Uang yang dibagi tidak cukup setelah dikurangi tabungan dan pengeluaran yang sudah terjadi (kurang Rp1)'); }
 { const { d } = ut60(); ex(d, '2026-10-21', 50000); eq('G-07 "(kurang Rp2)" at 549.999', save(d, '2026-10-22', 'weekly', 549999, 300000).error.endsWith('(kurang Rp2)'), true); }
+// test-plan v1.5 UT-100..107
+{ const d = D(); ex(d, '2026-10-19', 120000); ex(d, '2026-10-20', 80000); const a = save(d, '2026-10-21', 'weekly', 1000000, 300000); const b = save(d, '2026-10-21', 'weekly', 1000000, 300000);
+  eq('UT-100 create then same-day edit 140.000 / 140.000, 1 plan', [a.plan.dailyAllowance, b.plan.dailyAllowance, b.prior, d.budgetPlans.length], [140000, 140000, 0, 1]);
+  ex(d, '2026-10-21', 50000); const c = save(d, '2026-10-22', 'weekly', 1200000, 300000);
+  eq('UT-101 next-day edit 212.500 (prior 50.000), history 21–21, active 22–25', [c.plan.dailyAllowance, c.prior, d.budgetPlans.map((p) => p.startDate + '..' + p.endDate)], [212500, 50000, ['2026-10-21..2026-10-21', '2026-10-22..2026-10-25']]); }
+{ const d = D(); ex(d, '2026-10-05', 1500000); save(d, '2026-10-10', 'monthly', 3000000, 520000); ex(d, '2026-10-15', 400000); const r = save(d, '2026-10-19', 'monthly', 3200000, 520000);
+  eq('UT-102 monthly chain from 10 Okt → 175.384 / 31 Okt 175.392', [r.prior, r.plan.dailyAllowance, B.fixedAllowanceOn(r.plan, '2026-10-31')], [400000, 175384, 175392]); }
+{ const d = D(); save(d, '2026-10-12', 'weekly', 1000000, 300000); ex(d, '2026-10-19', 120000); const a = save(d, '2026-10-21', 'weekly', 1000000, 300000); const b = save(d, '2026-10-22', 'weekly', 1000000, 300000);
+  eq('UT-103 previous plan ended normally ≠ chain → 140.000 then 175.000', [a.plan.dailyAllowance, b.plan.dailyAllowance], [140000, 175000]); }
+{ const d = D(); ex(d, '2026-10-15', 90000); save(d, '2026-10-19', 'weekly', 1000000, 300000); ex(d, '2026-10-19', 120000); ex(d, '2026-10-20', 80000); save(d, '2026-10-21', 'monthly', 3000000, 520000);
+  const R = recap(d, 'weekly', '2026-10-23').planInfo; eq('UT-104 weekly recap, last plan monthly: 1.236.360, sisa 1.036.360, diganti 1', [R.portion, R.remaining, R.replacedCount], [1236360, 1036360, 1]); }
+{ const d = D(); save(d, '2026-10-01', 'monthly', 3000000, 520000); const R = recap(d, 'weekly', '2026-10-19').planInfo; eq('UT-105 monthly only: 560.000, no note', [R.portion, R.replacedCount], [560000, 0]); }
+{ const d = D(); save(d, '2026-10-01', 'monthly', 3000000, 520000); const n = save(d, '2026-11-01', 'monthly', 3000000, 520000); const R = recap(d, 'weekly', '2026-11-01').planInfo;
+  eq('UT-106 cross-month week: 6×80.000 + 82.666 = 562.666, Nov not a replacement', [n.plan.dailyAllowance, R.portion, R.replacedCount], [82666, 562666, 0]); }
+eq('UT-107/G-07 message format (X = 1 − sisa, N-04 pending)', [B.insufficientMsg(0), B.insufficientMsg(-1), B.insufficientMsg(-99999)].map((m) => m.slice(m.indexOf('('))), ['(kurang Rp1)', '(kurang Rp2)', '(kurang Rp100.000)']);
+eq('G-07 one shared helper text', B.insufficientMsg(0), 'Uang yang dibagi tidak cukup setelah dikurangi tabungan dan pengeluaran yang sudah terjadi (kurang Rp1)');
 for (const v of ['Rp 15.000', 'Rp15.000', 'rp15000', 'RP 15000']) eq(`BUG-09 "${v}" → 15000`, parseMoney(v).value, 15000);
 eq('BUG-08 intermediate "30.0000" regroups to 300.000', maskMoney('30.0000'), '300.000');
 eq('BUG-08 "300.000" accepted', parseMoney('300.000').value, 300000);

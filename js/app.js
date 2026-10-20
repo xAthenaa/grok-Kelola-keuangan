@@ -343,7 +343,7 @@ function planForm(existing) {
     ${moneyField('plan-amt', 'Uang yang dibagi', existing ? existing.amountToAllocate : '')}
     <p class="small muted" style="margin:4px 0 0">ⓘ Total saldo saat ini <b class="num">${rp(totalBal)}</b> <button class="btn sm text" type="button" id="use-bal">Pakai nilai</button></p>
     ${moneyField('plan-saving', 'Jumlah yang ingin ditabung', existing ? existing.savingAmount : '')}
-    ${prior || incInfo ? `<p class="note ok small">ⓘ Sudah terpakai ${rp(prior)} (pengeluaran ${F.fmtDate(priorFrom)} s/d kemarin) — dikurangkan dari uang dibagi. Pemasukan periode ini ${rp(incInfo)} (info; “uang dibagi” sudah mencakup pemasukan).</p>` : ''}
+    ${existing ? `<p class="note ok small">ⓘ Sudah terpakai ${rp(prior)} (pengeluaran ${F.fmtDate(priorFrom)} s/d kemarin) — dikurangkan dari uang dibagi. Pemasukan periode ini ${rp(incInfo)} (info; “uang dibagi” sudah mencakup pemasukan).</p>` : ''}
     <div class="card hl" style="margin:16px 0 0" aria-live="polite" id="plan-preview"></div><div id="plan-msgs" aria-live="polite"></div>
     <div class="actions"><button class="btn" type="button" id="plan-cancel">Batal</button><button class="btn primary" type="submit" id="plan-save" disabled>Simpan</button></div></form>` };
   };

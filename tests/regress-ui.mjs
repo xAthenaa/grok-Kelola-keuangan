@@ -1,9 +1,10 @@
 // Regresi UI BUG-01..06 + N-03, dengan jam dipalsukan (BUG-07)
-import { chromium } from 'playwright-core';
+import { chromium, firefox, webkit } from 'playwright-core';
 import fs from 'fs';
 const BASE = process.env.KK_URL || 'http://localhost:8931/';
 const OUT = new URL('./output/', import.meta.url).pathname; fs.mkdirSync(OUT, { recursive: true });
-const browser = await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--no-sandbox'] });
+const BR = process.env.BROWSER || 'chromium';
+const browser = BR === 'firefox' ? await firefox.launch() : BR === 'webkit' ? await webkit.launch() : await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--no-sandbox'] });
 let fail = 0, total = 0; const errs = []; const check = (n, ok, info = '') => { total++; if (!ok) fail++; console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : info); };
 const ctx = await browser.newContext({ viewport: { width: 360, height: 900 }, timezoneId: 'Asia/Shanghai' });
 const p = await ctx.newPage(); p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => m.type() === 'error' && errs.push(m.text()));
@@ -67,6 +68,23 @@ check('nothing saved by rejected inputs', (await nTx()) === n0);
 // UT-92 penyesuaian negatif tetap boleh
 await p.goto(BASE + '#akun'); await p.waitForTimeout(200); await p.click('[data-acc-adj]'); await p.fill('#adj-val', ''); await p.locator('#adj-val').pressSequentially('-50000'); await p.click('#adj-save'); await p.waitForTimeout(200);
 check('UT-92 adjustment to -Rp50.000 accepted', (await txt()).includes('-Rp50.000') && (await txt()).includes('Saldo akun jadi minus'));
+// IT-19 (a): data UT-100 — buat rencana Rab, Ubah angka sama → Sudah terpakai Rp0, 140.000, 1 rencana
+await seed(base([ex('2026-10-19', 120000), ex('2026-10-20', 80000)], [])); await at('21', '#anggaran');
+await p.fill('#plan-amt', '1000000'); await p.fill('#plan-saving', '300000'); await p.click('#plan-save'); await p.waitForTimeout(200);
+await p.click('#plan-edit'); await p.waitForTimeout(100); r = await txt();
+check('IT-19a edit form "Sudah terpakai Rp0"', r.includes('Sudah terpakai Rp0 '), r.slice(0, 600));
+await p.click('#plan-save'); await p.click('[data-yes]'); await p.waitForTimeout(200); plans = (await store()).budgetPlans;
+check('IT-19a still 140.000, 1 plan', plans.length === 1 && plans[0].dailyAllowance === 140000, JSON.stringify(plans));
+// IT-19 (b): skenario UT-80a lewat dialog
+await seed(base([ex('2026-10-15', 90000), ex('2026-10-19', 120000), ex('2026-10-20', 80000)], [weekly])); await at('21', '#anggaran');
+await p.click('#plan-edit'); await p.click('label:has-text("Bulanan")'); await p.fill('#plan-amt', '3000000'); await p.fill('#plan-saving', '520000'); await p.waitForTimeout(100); r = await txt('#plan-preview');
+check('IT-19b preview (3.000.000 − 520.000 − 200.000) / 11 hari = Rp207.272', r.includes('(3.000.000 − 520.000 − 200.000) / 11 hari') && r.includes('Rp207.272'), r);
+// G-07: pesan pratinjau = pesan simpan (helper yang sama)
+await p.fill('#plan-amt', '720000'); await p.waitForTimeout(100); r = await txt('#plan-msgs');
+check('G-07 preview "(kurang Rp1)"', r.includes('Uang yang dibagi tidak cukup setelah dikurangi tabungan dan pengeluaran yang sudah terjadi (kurang Rp1)'), r);
+await p.fill('#plan-amt', '3000000'); await p.click('#plan-save'); await p.click('[data-yes]'); await p.waitForTimeout(200);
+await at('23', '#rekap'); await p.click('[data-rm=weekly]'); await p.waitForTimeout(150); r = await txt();
+check('IT-19b weekly recap Jatah minggu ini Rp1.236.360, sisa Rp1.036.360', r.includes('Jatah minggu ini Rp1.236.360') && r.includes('Sisa jatah Rp1.036.360'), r.slice(0, 900));
 // BUG-08: ketik tombol demi tombol di SETIAP field nominal
 const typed = async (sel, v) => { await p.fill(sel, ''); await p.locator(sel).pressSequentially(v, { delay: 15 }); await p.waitForTimeout(50); return p.inputValue(sel); };
 const noErr = async (id) => ((await p.textContent('#' + id + '-err')) || '') === '';
@@ -100,5 +118,5 @@ check('BUG-08 plan saved 1.000.000/300.000', (await store()).budgetPlans[0]?.amo
 await p.click('#goal-add'); await p.fill('#g-name', 'Laptop'); const gt = await typed('#g-target', '8000000'), gs = await typed('#g-saved', '2000000'); await p.click('#g-save'); await p.waitForTimeout(150);
 check('BUG-08 goal fields typed 8.000.000 / 2.000.000, saved', gt === '8.000.000' && gs === '2.000.000' && (await store()).savingGoals[0]?.targetAmount === 8000000);
 check('no JS errors', errs.length === 0, errs.join('\n'));
-console.log(`regress-ui: ${total - fail}/${total} checks passed`);
+console.log(`regress-ui [${BR}]: ${total - fail}/${total} checks passed`);
 await browser.close(); process.exit(fail ? 1 : 0);
