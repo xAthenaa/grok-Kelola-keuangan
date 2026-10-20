@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Kelola Keuangan: catat saldo cash & digital, transaksi, rencana jatah harian, dan rekap mingguan. Data hanya di perangkat Anda.">
+<meta name="theme-color" content="#15803D">
+<title>Kelola Keuangan</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2315803D'/%3E%3Ctext x='16' y='22' font-size='16' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='700'%3ERp%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<a class="skip" href="#main">Lewati ke konten</a>
+<div class="layout">
+  <nav class="sidebar" aria-label="Navigasi utama">
+    <div class="brand" aria-hidden="true"><span class="logo">Rp</span> Kelola Keuangan</div>
+    <ul id="nav"></ul>
+  </nav>
+  <div class="content">
+    <header class="topbar">
+      <h1 id="page-title">Kelola Keuangan</h1>
+      <button class="btn primary" id="btn-add-tx" type="button">+ Transaksi</button>
+    </header>
+    <main id="main" tabindex="-1"></main>
+  </div>
+</div>
+<button class="fab" id="fab" type="button" aria-label="Tambah transaksi">+</button>
+<nav class="bottomnav" aria-label="Navigasi bawah"><ul id="bnav"></ul></nav>
+<dialog id="dlg" aria-labelledby="dlg-title"><div id="dlg-body"></div></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
