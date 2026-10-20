@@ -117,6 +117,32 @@ await typed('#plan-amt', '1000000'); await p.click('#plan-save'); await p.waitFo
 check('BUG-08 plan saved 1.000.000/300.000', (await store()).budgetPlans[0]?.amountToAllocate === 1000000);
 await p.click('#goal-add'); await p.fill('#g-name', 'Laptop'); const gt = await typed('#g-target', '8000000'), gs = await typed('#g-saved', '2000000'); await p.click('#g-save'); await p.waitForTimeout(150);
 check('BUG-08 goal fields typed 8.000.000 / 2.000.000, saved', gt === '8.000.000' && gs === '2.000.000' && (await store()).savingGoals[0]?.targetAmount === 8000000);
+// BUG-10: grafik Jatah vs Aktual
+const plan10 = { id: 'p10', period: 'weekly', startDate: '2026-10-20', endDate: '2026-10-25', amountToAllocate: 120000, savingAmount: 17148, dailyAllowance: 17142, createdAt: '2026-10-20T02:00:00Z', updatedAt: '2026-10-20T02:00:00Z' };
+const chartInfo = () => p.evaluate(() => { const box = document.querySelector('[data-chart]'); const svg = box.querySelector('svg'); const tick = svg.querySelector('[data-tick]').getBoundingClientRect();
+  return { cols: svg.querySelectorAll('[data-col]').length, svgW: +svg.getAttribute('width'), boxW: box.clientWidth, h: +svg.getAttribute('height'), par: svg.getAttribute('preserveAspectRatio'),
+    actual: svg.querySelectorAll('[data-kind=actual]').length, future: svg.querySelectorAll('[data-kind=future-outline]').length, zero: svg.querySelectorAll('[data-kind=zero]').length,
+    outside: svg.querySelectorAll('g[data-kind=outside]').length, status: [...svg.querySelectorAll('[data-status]')].map((e) => e.dataset.status), tickH: tick.height, ticks: [...svg.querySelectorAll('[data-tick]')].map((t) => t.textContent),
+    empty: !!document.querySelector('[data-empty-msg]'), title: svg.querySelector('g[data-col] title')?.textContent, sw: document.documentElement.scrollWidth }; });
+await seed(base([], [plan10])); await at('20', '#anggaran'); let ci = await chartInfo();
+check('BUG-10 new plan: 7 cols Sen–Min, Mon outside, 5 future outlines, no filled bars', ci.cols === 7 && ci.outside === 1 && ci.future === 5 && ci.actual === 0, JSON.stringify(ci));
+check('BUG-10 new plan: today Rp0 marker + "Belum ada pengeluaran minggu ini"', ci.zero === 1 && ci.empty && (await txt()).includes('Belum ada pengeluaran minggu ini'));
+check('BUG-10 nice ticks Rp0/5rb/…/25rb', JSON.stringify(ci.ticks) === JSON.stringify(['Rp0', 'Rp5rb', 'Rp10rb', 'Rp15rb', 'Rp20rb', 'Rp25rb']), ci.ticks.join(','));
+check('BUG-10 SVG at real width, no stretch, 220px on HP, label ~12px', ci.svgW === ci.boxW && !ci.par && ci.h === 220 && ci.tickH < 18 && ci.sw <= 360, JSON.stringify(ci));
+await seed(base([ex('2026-10-20', 9000), ex('2026-10-21', 16000)], [plan10])); await at('23', '#anggaran'); ci = await chartInfo();
+check('BUG-10 mid-week: 2 bars (Aman, Hampir habis), 2 Rp0 markers, 2 future outlines', ci.actual === 2 && ci.zero === 2 && ci.future === 2 && ci.status.join() === 'safe,warn' && !ci.empty, JSON.stringify(ci));
+check('BUG-10 tooltip full amounts', (await p.evaluate(() => [...document.querySelectorAll('[data-chart] title')].map((t) => t.textContent).join('|'))).includes('aktual Rp9.000 · jatah tetap Rp17.142'));
+await seed(base([ex('2026-10-20', 25000), ex('2026-10-21', 15000), ex('2026-10-23', 30000)], [plan10])); await at('23', '#anggaran'); ci = await chartInfo();
+check('BUG-10 over jatah: red bars, top tick 40rb', ci.status.join() === 'over,warn,over' && ci.ticks.at(-1) === 'Rp40rb', JSON.stringify(ci));
+await p.setViewportSize({ width: 1280, height: 900 }); await p.waitForTimeout(300); ci = await chartInfo();
+check('BUG-10 ResizeObserver redraw at 1280: width follows container, 260px', ci.svgW === ci.boxW && ci.boxW > 600 && ci.h === 260, JSON.stringify(ci));
+await p.setViewportSize({ width: 360, height: 900 }); await p.waitForTimeout(300); ci = await chartInfo();
+check('BUG-10 redraw back to 360: no h-scroll', ci.svgW === ci.boxW && ci.h === 220 && ci.sw <= 360, JSON.stringify(ci));
+await seed(base([ex('2026-10-20', 50000)], [{ id: 'm', period: 'monthly', startDate: '2026-10-20', endDate: '2026-10-31', amountToAllocate: 1200000, savingAmount: 0, dailyAllowance: 100000, createdAt: '2026-10-20T02:00:00Z', updatedAt: 'x' }]));
+await at('21', '#anggaran'); ci = await chartInfo(); check('BUG-10 monthly "7 hari": 7 cols Sen–Min, Mon outside', ci.cols === 7 && ci.outside === 1, JSON.stringify(ci));
+await p.click('[data-bv=m]'); await p.waitForTimeout(200); ci = await chartInfo();
+check('BUG-10 monthly "Bulan ini": 31 cols, 19 outside, internal scroll only', ci.cols === 31 && ci.outside === 19 && ci.sw <= 360, JSON.stringify(ci));
+await p.screenshot({ path: OUT + 'bug10-monthly-360.png', fullPage: true });
 check('no JS errors', errs.length === 0, errs.join('\n'));
 console.log(`regress-ui [${BR}]: ${total - fail}/${total} checks passed`);
 await browser.close(); process.exit(fail ? 1 : 0);

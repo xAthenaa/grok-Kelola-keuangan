@@ -4,6 +4,7 @@ import * as S from './storage.js';
 import { recompute, totals, balanceAt } from './balance.js';
 import * as B from './budget.js';
 import { recap, pct } from './recap.js';
+import { barChartSVG } from './chart.js';
 
 const { rp, rpSigned, esc, today } = F;
 let data = S.load();
@@ -83,8 +84,10 @@ function render() {
   const noAcc = data.accounts.length === 0;
   $('#fab').hidden = noAcc; $('#btn-add-tx').hidden = noAcc;
   const main = $('#main');
+  chartData.clear();
   main.innerHTML = (noAcc && r !== 'pengaturan' ? pageOnboarding : PAGES[r])();
   (noAcc && r !== 'pengaturan' ? bindOnboarding : BIND[r])(main);
+  drawCharts();
   if (lastRoute !== r) { lastRoute = r; window.scrollTo(0, 0); }
 }
 window.addEventListener('hashchange', () => { render(); $('#main').focus({ preventScroll: true }); });
@@ -287,31 +290,31 @@ function pageDashboard() {
 }
 
 // ---------- Grafik SVG (lokal, tanpa pihak ketiga) ----------
-const ST_COLOR = { safe: '#15803D', warn: '#D97706', over: '#DC2626', future: '#D1D5DB', none: '#E5E7EB' };
-function barChart(rows, { monthly = false } = {}) {
-  const n = rows.length; if (!n) return '';
-  const bw = monthly ? 16 : 44, gap = monthly ? 4 : 12, h = 180, pad = 44, W = Math.max(n * (bw + gap) + pad, 300);
-  const max = Math.max(1, ...rows.map((r) => Math.max(r.actual || 0, r.fixed || 0, r.dyn > 0 && !r.future ? r.dyn : 0))) * 1.1;
-  const y = (v) => h - 20 - (v / max) * (h - 30);
-  let bars = '', fixedPts = [], dynPts = [], labels = '';
-  rows.forEach((r, i) => {
-    const x = pad + i * (bw + gap); const c = r.outside ? ST_COLOR.none : r.future ? ST_COLOR.future : ST_COLOR[r.status];
-    const v = r.future ? (r.fixed || 0) : r.actual; const yy = y(v);
-    bars += `<rect x="${x}" y="${yy}" width="${bw}" height="${Math.max(0, h - 20 - yy)}" rx="3" fill="${c}" ${r.future ? 'opacity=".6"' : ''}><title>${F.fmtDate(r.date)}: aktual ${rp(r.actual)}${r.fixed != null ? ' · jatah ' + rp(r.fixed) : ''}</title></rect>`;
-    if (!r.outside) fixedPts.push(`${x},${y(r.fixed)} ${x + bw},${y(r.fixed)}`);
-    if (!r.outside && !r.future) dynPts.push(`${x + bw / 2},${y(Math.max(0, r.dyn))}`);
-    const d = F.parse(r.date); const lab = monthly ? d.getDate() : F.DAYS[d.getDay()];
-    if (!monthly || d.getDate() === 1 || d.getDate() % 5 === 0) labels += `<text x="${x + bw / 2}" y="${h - 4}" text-anchor="middle" font-size="11" fill="#4B5563">${lab}</text>`;
-  });
-  const ticks = [0, max / 2, max / 1.1].map((v) => `<text x="${pad - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10" fill="#4B5563">Rp${F.rpShort(Math.round(v))}</text><line x1="${pad}" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="#E5E7EB"/>`).join('');
-  return `<div class="chart" tabindex="0" role="region" aria-label="Grafik jatah vs aktual; data lengkap ada di tabel di bawah"><svg width="${monthly ? W : '100%'}" height="${h}" viewBox="0 0 ${W} ${h}" ${monthly ? '' : 'preserveAspectRatio="none"'} aria-hidden="true">${ticks}${bars}
-    ${fixedPts.map((p) => `<polyline points="${p}" stroke="#166534" stroke-width="2.5" fill="none"/>`).join('')}
-    ${dynPts.length > 1 ? `<polyline points="${dynPts.join(' ')}" stroke="#22C55E" stroke-width="2" stroke-dasharray="5 4" fill="none"/>` : ''}${labels}</svg></div>
-    <ul class="legend row" style="gap:12px"><li><i style="background:#15803D"></i>Aman</li><li><i style="background:#D97706"></i>Hampir habis</li><li><i style="background:#DC2626"></i>Lewat</li><li><i style="background:#D1D5DB"></i>Mendatang</li><li><i style="background:#166534;height:3px"></i>Jatah tetap</li><li><i style="border-top:2px dashed #22C55E;height:0;background:none"></i>Jatah dinamis (info)</li></ul>`;
+// BUG-10: grafik digambar di js/chart.js pada lebar kontainer nyata (dihitung ulang saat resize)
+const chartData = new Map(); let chartSeq = 0;
+function barChart(rows, { monthly = false, emptyLabel = 'minggu ini' } = {}) {
+  if (!rows.length) return '';
+  const id = 'c' + ++chartSeq; chartData.set(id, { rows, monthly });
+  const noSpend = !rows.some((r) => !r.future && r.actual > 0);
+  return `${noSpend ? `<p class="small muted" data-empty-msg style="margin:4px 0 8px">Belum ada pengeluaran ${emptyLabel}.</p>` : ''}
+    <div class="chart" data-chart="${id}" tabindex="0" role="region" aria-label="Grafik jatah vs aktual; data lengkap ada di tabel di bawah"></div>
+    <ul class="legend row" style="gap:12px"><li><i style="background:#15803D"></i>Aman</li><li><i style="background:#D97706"></i>Hampir habis</li><li><i style="background:#DC2626"></i>Lewat</li>
+    <li><i style="border:1.5px dashed #9CA3AF;background:none"></i>Mendatang</li><li><i style="background:repeating-linear-gradient(45deg,#E5E7EB 0 3px,#fff 3px 6px)"></i>Di luar rencana</li>
+    <li><i style="background:#166534;height:3px"></i>Jatah tetap</li><li><i style="border-top:2px dashed #22C55E;height:0;background:none"></i>Dinamis (info)</li></ul>`;
 }
+function drawCharts() {
+  if (chartRO) chartRO.disconnect();
+  for (const el of $$('[data-chart]')) { drawOne(el); if (chartRO) chartRO.observe(el); }
+}
+// ResizeObserver: gambar ulang mengikuti lebar kontainer (design.md Addendum v1.2.1)
+const chartRO = typeof ResizeObserver !== 'undefined' ? new ResizeObserver((entries) => requestAnimationFrame(() => { for (const e of entries) { const el = e.target; if (!el.isConnected) continue; const w = Math.floor(el.clientWidth); if (w && +el.dataset.w !== w) drawOne(el); } })) : null;
+function drawOne(el) { const d = chartData.get(el.dataset.chart); if (!d) return; const w = Math.max(260, Math.floor(el.clientWidth)); el.dataset.w = w; el.innerHTML = barChartSVG(d.rows, { width: w, monthly: d.monthly });
+  // Bulanan di HP: gulir internal ke hari ini (atau awal rencana) agar batang aktif terlihat
+  if (d.monthly && el.scrollWidth > el.clientWidth) { const i = Math.max(0, d.rows.findIndex((r) => r.isToday || (!r.outside && r.future))); el.scrollLeft = Math.max(0, (el.scrollWidth / d.rows.length) * (i - 3)); } }
+if (!chartRO) window.addEventListener('resize', () => $$('[data-chart]').forEach(drawOne));
 function rowsTable(rows) {
   return `<div class="tablewrap" tabindex="0" role="region" aria-label="Tabel jatah vs aktual per hari"><table class="daily"><caption class="sr">Jatah vs aktual per hari</caption><thead><tr><th scope="col">Hari</th><th scope="col" class="r">Jatah tetap</th><th scope="col" class="r">Aktual</th><th scope="col">Status</th></tr></thead><tbody>${rows.map((r) =>
-    `<tr class="${r.isToday ? 'today' : ''}"><th scope="row" style="font-weight:500">${F.dayShort(r.date)} ${F.parse(r.date).getDate()}${r.isToday ? ' (hari ini)' : ''}</th><td class="r">${r.outside ? '—' : rp(r.fixed)}</td><td class="r">${r.future ? '—' : rp(r.actual)}</td><td>${r.outside ? badge('none') : badge(r.status)}</td></tr>`).join('')}</tbody></table></div>`;
+    `<tr class="${r.isToday ? 'today' : ''}"><th scope="row" style="font-weight:500">${F.dayShort(r.date)} ${F.parse(r.date).getDate()}${r.isToday ? ' (hari ini)' : ''}</th><td class="r">${r.outside ? '—' : rp(r.fixed)}</td><td class="r">${r.future || r.outside ? '—' : rp(r.actual)}</td><td>${r.outside ? '<span class="badge b-none">di luar rencana</span>' : badge(r.status)}</td></tr>`).join('')}</tbody></table></div>`;
 }
 function heatmap(rows) {
   const first = (F.parse(rows[0].date).getDay() + 6) % 7;
@@ -381,8 +384,11 @@ function pageAnggaran() {
   let main = '';
   if (p) {
     const sm = B.planSummary(data, p); const fixed = B.fixedAllowanceOn(p, t), dyn = B.dynamicAllowanceOn(data, p, t), spentToday = B.expenseOn(data, t);
-    const rem = F.diffDays(t, p.endDate) + 1; let from = p.startDate, to = p.endDate;
-    if (p.period === 'monthly' && ui.budgetView === '7') { from = F.weekStart(t) < p.startDate ? p.startDate : F.weekStart(t); to = F.weekEnd(t) > p.endDate ? p.endDate : F.weekEnd(t); }
+    const rem = F.diffDays(t, p.endDate) + 1; // BUG-10: selalu kolom kalender penuh (Sen–Min / seluruh bulan); hari di luar rencana ditandai
+    let from, to;
+    if (p.period === 'weekly') { from = F.weekStart(p.startDate); to = F.weekEnd(p.startDate); }
+    else if (ui.budgetView === '7') { from = F.weekStart(t); to = F.weekEnd(t); }
+    else { from = F.monthStart(p.startDate); to = F.monthEnd(p.startDate); }
     const rows = B.dailyRows(data, p, from, to); const usedPct = sm.budget ? Math.round((sm.used * 100) / sm.budget) : (sm.used > 0 ? 101 : 0); const usedSt = B.status(sm.used, sm.budget); const ratio = Math.min(100, usedPct); // BUG-03: status dari nilai asli sebelum dibatasi
     main = `<section class="card"><div class="row between"><h3 style="margin:0">Rencana aktif · ${p.period === 'weekly' ? 'Mingguan' : 'Bulanan'}</h3>
       <div class="row"><button class="btn sm" type="button" id="plan-edit">Ubah</button><button class="btn sm text expense" type="button" id="plan-del">Hapus</button></div></div>
@@ -393,7 +399,7 @@ function pageAnggaran() {
       <p style="margin:12px 0 0" id="plan-used">Terpakai <b class="num">${rp(sm.used)}</b> / ${rp(sm.budget)} (<span class="${usedSt === 'over' ? 'expense' : ''}">${usedPct}%</span>) ${badge(usedSt)}</p><div class="bar ${usedSt === 'safe' ? '' : usedSt}" role="img" aria-label="Terpakai ${usedPct}%${usedSt === 'over' ? ', melebihi jatah' : ''}"><i style="width:${ratio}%"></i></div>
       <div class="row between"><span>Sisa jatah hari ini <b class="num ${fixed - spentToday < 0 ? 'expense' : ''}">${rp(fixed - spentToday)}</b></span>${badge(B.status(spentToday, fixed))}</div></section>
       <section class="card"><div class="row between"><h3 style="margin:0">Jatah vs Aktual</h3>${p.period === 'monthly' ? `<div class="seg" role="group" aria-label="Rentang grafik"><button type="button" data-bv="7" aria-pressed="${ui.budgetView === '7'}">7 hari</button><button type="button" data-bv="m" aria-pressed="${ui.budgetView !== '7'}">Bulan ini</button></div>` : ''}</div>
-      ${barChart(rows, { monthly: rows.length > 7 })}${rows.length > 7 ? `<details style="margin-top:12px"><summary>Kalender (heatmap)</summary>${heatmap(rows)}</details>` : ''}${rowsTable(rows)}</section>`;
+      ${barChart(rows, { monthly: rows.length > 7, emptyLabel: rows.length > 7 ? 'bulan ini' : 'minggu ini' })}${rows.length > 7 ? `<details style="margin-top:12px"><summary>Kalender (heatmap)</summary>${heatmap(rows)}</details>` : ''}${rowsTable(rows)}</section>`;
   }
   const goals = data.savingGoals;
   return `<div id="plan-slot">${p ? main : ''}</div>
@@ -459,7 +465,7 @@ function pageRekap() {
     <p class="small muted" style="margin:4px 0 0">Hari Lewat: ${pi.overDays}/${pi.rows.filter((r) => !r.outside).length}${pi.showSaving ? ` · Tabungan dicatat manual — target jangka panjang terkumpul ${rp(data.savingGoals.reduce((s, g) => s + g.savedAmount, 0))}` : ''}</p></section>` : ''}
   <div class="split"><section class="card"><h3>Pengeluaran per kategori</h3>${donut(R.expenseByCat, R.totalExpense)}</section>
   <section class="card"><h3>Pemasukan per kategori</h3>${R.incomeByCat.length ? `<ul class="legend">${R.incomeByCat.map((it) => `<li style="display:block"><div class="row between"><span>${esc(catName(it.categoryId))}</span><span class="num"><b>${rp(it.amount)}</b> <span class="muted">${pctStr(it.pct)}</span></span></div><div class="bar"><i style="width:${it.pct}%"></i></div></li>`).join('')}</ul>` : '<p class="muted">Belum ada data.</p>'}</section></div>
-  ${pi ? `<section class="card" style="margin-top:16px"><h3>Jatah vs Aktual</h3>${barChart(pi.rows, { monthly: m === 'monthly' })}${m === 'monthly' ? `<details style="margin-top:12px"><summary>Kalender (heatmap)</summary>${heatmap(pi.rows)}</details>` : ''}${rowsTable(pi.rows)}</section>` : ''}
+  ${pi ? `<section class="card" style="margin-top:16px"><h3>Jatah vs Aktual</h3>${barChart(pi.rows, { monthly: m === 'monthly', emptyLabel: m === 'monthly' ? 'bulan ini' : 'minggu ini' })}${m === 'monthly' ? `<details style="margin-top:12px"><summary>Kalender (heatmap)</summary>${heatmap(pi.rows)}</details>` : ''}${rowsTable(pi.rows)}</section>` : ''}
   ${m === 'monthly' ? `<section class="card" style="margin-top:16px"><h3>Ringkasan per minggu</h3><div class="tablewrap" tabindex="0" role="region" aria-label="Tabel ringkasan per minggu"><table><thead><tr><th scope="col">Minggu</th><th scope="col">Rentang</th><th scope="col" class="r">Pemasukan</th><th scope="col" class="r">Pengeluaran</th></tr></thead><tbody>${R.weeks.map((w) => `<tr><th scope="row">${w.label}</th><td>${F.parse(w.start).getDate()}–${F.parse(w.end).getDate()}</td><td class="r">${rp(w.income)}</td><td class="r">${rp(w.expense)}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
   <div class="split" style="margin-top:16px"><section class="card"><h3>3 pengeluaran terbesar</h3>${R.top3.length ? `<ol class="list">${R.top3.map((t) => txItem(t, false)).join('')}</ol>` : '<p class="muted">Belum ada pengeluaran.</p>'}
     <p style="margin:12px 0 0">vs ${word} lalu: ${R.changePct == null ? '<b>—</b> <span class="muted small">belum ada data</span>' : `Pengeluaran <b class="${R.changePct > 0 ? 'expense' : 'income'}">${R.changePct > 0 ? '▲' : R.changePct < 0 ? '▼' : '='} ${pctStr(Math.abs(R.changePct))}</b> <span class="small muted">(${rp(R.prevExpense)} → ${rp(R.totalExpense)})</span>`}</p></section>

@@ -1,9 +1,10 @@
-import { chromium } from 'playwright-core';
+import { chromium, firefox, webkit } from 'playwright-core';
 import fs from 'fs';
 const URL = process.env.KK_URL || 'http://localhost:8931/';
 // BUG-07: output tes terpisah dari site-screens/
 const SHOTS = new globalThis.URL('./output/', import.meta.url).pathname; fs.mkdirSync(SHOTS, { recursive: true });
-const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox'] });
+const BR = process.env.BROWSER || 'chromium';
+const browser = BR === 'firefox' ? await firefox.launch() : BR === 'webkit' ? await webkit.launch() : await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox'] });
 const ctx = await browser.newContext({ viewport: { width: 375, height: 800 }, acceptDownloads: true, timezoneId: 'Asia/Shanghai' });
 const page = await ctx.newPage();
 // BUG-07: jam dipalsukan → Selasa 20 Okt 2026 12.00 (UTC+8)
@@ -69,7 +70,7 @@ await page.click('#plan-edit'); await page.click('label:has-text("Bulanan")'); a
 await page.click('#plan-save'); t = await text('#dlg'); check('A-13 dialog Ganti rencana aktif?', t.includes('Ganti rencana aktif?')); await page.click('[data-yes]'); await page.waitForTimeout(200);
 t = await text(); check('created today → edited in place (1 plan, monthly 12 hari)', (await page.evaluate(() => JSON.parse(localStorage.kk_data_v1).budgetPlans.length)) === 1 && t.includes('Bulanan') && t.includes('(12 hari)'));
 check('AC4a monthly view toggle', await page.locator('[data-bv=m]').count() === 1); await page.click('[data-bv=m]'); await page.waitForTimeout(100);
-check('monthly table 12 rows', (await page.locator('table tbody tr').count()) === 12);
+check('monthly table = full month 31 rows (BUG-10: days outside plan marked)', (await page.locator('table.daily tbody tr').count()) === 31 && (await page.locator('table.daily tbody tr', { hasText: 'di luar rencana' }).count()) === 19);
 // AC8 persistence
 await page.reload(); await page.waitForTimeout(200); await go('#dashboard'); t = await text();
 check('AC8 persisted after reload', t.includes('Rp1.165.000') && t.includes('Jatah Hari Ini'), t.slice(0, 200));
@@ -98,9 +99,9 @@ const pages = ['dashboard', 'transaksi', 'akun', 'anggaran', 'rekap', 'pengatura
 for (const w of [360, 375, 1280]) { await page.setViewportSize({ width: w, height: 900 });
   for (const p of pages) { await go('#' + p); if (p === 'rekap') { await page.click('[data-rm=monthly]'); }
     const sw = await page.evaluate(() => document.documentElement.scrollWidth); check(`no h-scroll ${w}px #${p}`, sw <= w, `scrollWidth=${sw}`);
-    if (w !== 360) await page.screenshot({ path: `${SHOTS}/${p}-${w}.png`, fullPage: true }); } }
+    if (w !== 360) await page.screenshot({ path: `${SHOTS}/${BR}-${p}-${w}.png`, fullPage: true }); } }
 await page.setViewportSize({ width: 375, height: 900 }); await go('#dashboard'); await page.click('#fab'); await page.waitForTimeout(150); await page.screenshot({ path: `${SHOTS}/form-transaksi-375.png` });
 await page.keyboard.press('Escape');
 check('no JS errors', errors.length === 0, errors.join('\n'));
-console.log(`e2e: ${total - fail}/${total} checks passed`);
+console.log(`e2e [${BR}]: ${total - fail}/${total} checks passed`);
 await browser.close(); process.exit(fail ? 1 : 0);
