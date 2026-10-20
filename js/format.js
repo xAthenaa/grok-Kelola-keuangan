@@ -31,7 +31,8 @@ export const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().t
 // Parse nominal (A-14, AC-7): hanya bilangan bulat; desimal, negatif (kecuali allowNeg) & > maks ditolak, tidak diubah diam-diam
 export const MAX_AMOUNT = 999999999999;
 export function parseMoney(rawIn, { allowZero = false, allowNeg = false } = {}) {
-  const raw = String(rawIn ?? '').trim().replace(/\s+/g, '');
+  // BUG-09: awalan 'Rp' (tanpa beda huruf besar/kecil, spasi opsional) diterima
+  const raw = String(rawIn ?? '').trim().replace(/^rp\s*/i, '').replace(/\s+/g, '');
   if (!raw) return { error: 'Nominal wajib diisi' };
   const neg = raw.startsWith('-'); const body = neg ? raw.slice(1) : raw;
   if (/,/.test(body) || (body.includes('.') && !/^\d{1,3}(\.\d{3})+$/.test(body))) return { error: 'Nominal harus bilangan bulat (tanpa desimal)' };

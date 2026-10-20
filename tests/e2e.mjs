@@ -9,7 +9,7 @@ const page = await ctx.newPage();
 // BUG-07: jam dipalsukan → Selasa 20 Okt 2026 12.00 (UTC+8)
 await page.clock.setFixedTime(new Date('2026-10-20T12:00:00+08:00')); const errors = [];
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message)); page.on('console', (m) => m.type() === 'error' && errors.push('console: ' + m.text()));
-let fail = 0; const check = (n, ok, info = '') => { if (!ok) fail++; console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : info); };
+let fail = 0, total = 0; const check = (n, ok, info = '') => { total++; if (!ok) fail++; console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : info); };
 const text = async (sel = 'main') => (await page.locator(sel).innerText()).replace(/\s+/g, ' ');
 const go = async (h) => { await page.evaluate((h) => (location.hash = h), h); await page.waitForTimeout(150); };
 const save = async (sel = '#tx-save') => { await page.click(sel); await page.waitForTimeout(150); };
@@ -102,4 +102,5 @@ for (const w of [360, 375, 1280]) { await page.setViewportSize({ width: w, heigh
 await page.setViewportSize({ width: 375, height: 900 }); await go('#dashboard'); await page.click('#fab'); await page.waitForTimeout(150); await page.screenshot({ path: `${SHOTS}/form-transaksi-375.png` });
 await page.keyboard.press('Escape');
 check('no JS errors', errors.length === 0, errors.join('\n'));
+console.log(`e2e: ${total - fail}/${total} checks passed`);
 await browser.close(); process.exit(fail ? 1 : 0);

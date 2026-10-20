@@ -40,7 +40,8 @@ export function recap(data, mode, anyDate) {
     const last = plans[plans.length - 1];
     const hasMonthly = plans.some((p) => p.period === 'monthly');
     // N-03: jatah periode = uang dibagi − tabungan dari rencana TERAKHIR; dailyPortion = jumlah jatah tetap harian (grafik)
-    const periodBudget = last.amountToAllocate - last.savingAmount;
+    // G-06: rekap mingguan dengan rencana bulanan → porsi minggu (jumlah jatah tetap harian)
+    const periodBudget = mode === 'weekly' && last.period === 'monthly' ? portion : last.amountToAllocate - last.savingAmount;
     planInfo = { plans, last, showSaving: !(mode === 'weekly' && hasMonthly), /* A-11 */ portion: periodBudget, dailyPortion: portion, replacedCount: plans.length - 1, used, remaining: periodBudget - used, achieved: periodBudget - used >= 0, rows, splitDates: plans.slice(1).map((p) => p.startDate),
       overDays: rows.filter((r) => r.status === 'over').length };
   }

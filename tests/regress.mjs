@@ -2,7 +2,7 @@
 import * as B from '../js/budget.js';
 import { recap, pct } from '../js/recap.js';
 import { parseMoney, maskMoney } from '../js/format.js';
-let fail = 0; const eq = (n, a, b) => { const ok = JSON.stringify(a) === JSON.stringify(b); if (!ok) fail++; console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : `got ${JSON.stringify(a)} want ${JSON.stringify(b)}`); };
+let fail = 0, total = 0; const eq = (n, a, b) => { total++; const ok = JSON.stringify(a) === JSON.stringify(b); if (!ok) fail++; console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : `got ${JSON.stringify(a)} want ${JSON.stringify(b)}`); };
 const D = () => ({ accounts: [{ id: 'c', type: 'cash', initialBalance: 5000000, createdAt: '2026-09-01T00:00' }], categories: [], savingGoals: [], budgetPlans: [], transactions: [] });
 const ex = (d, date, amount) => d.transactions.push({ id: date + amount, type: 'expense', amount, accountId: 'c', categoryId: 'e', date });
 const inc = (d, date, amount) => d.transactions.push({ id: 'i' + date + amount, type: 'income', amount, accountId: 'c', categoryId: 'i', date });
@@ -24,7 +24,19 @@ for (const [amt, ok] of [[550000, false], [549999, false], [550001, true]]) {
   eq(`UT-89 ${amt} ${ok ? 'accepted' : 'rejected'}`, ok ? [r.plan?.dailyAllowance, B.fixedAllowanceOn(r.plan, '2026-10-25')] : !!r.error && d.budgetPlans.length === 2, ok ? [0, 1] : true); }
 function ut80(extra) { const d = D(); if (extra) ex(d, '2026-10-15', 90000); save(d, '2026-10-19', 'weekly', 1000000, 300000); ex(d, '2026-10-19', 120000); ex(d, '2026-10-20', 80000); return save(d, '2026-10-21', 'monthly', 3000000, 520000); }
 { const r = ut80(false); eq('UT-80 weekly→monthly 207.272 / 31 Okt 207.280 / 11 hari', [r.plan.dailyAllowance, B.fixedAllowanceOn(r.plan, '2026-10-31'), B.planDays(r.plan)], [207272, 207280, 11]); }
-{ const r = ut80(true); eq('UT-80a incl. 15 Okt → 199.090 / 31 Okt 199.100', [r.plan.dailyAllowance, B.fixedAllowanceOn(r.plan, '2026-10-31')], [199090, 199100]); }
+// UT-80a: v1.8 G-05 menggantikan nilai test-plan v1.4 (199.090): 15 Okt sebelum rencana pertama → tidak dikurangkan → 207.272
+{ const r = ut80(true); eq('UT-80a (G-05) 15 Okt before first plan not subtracted → 207.272 / 31 Okt 207.280', [r.plan.dailyAllowance, B.fixedAllowanceOn(r.plan, '2026-10-31'), r.prior], [207272, 207280, 200000]); }
+{ const d = D(); ex(d, '2026-10-19', 100000); save(d, '2026-10-20', 'weekly', 1000000, 300000); ex(d, '2026-10-20', 50000); const r = save(d, '2026-10-21', 'weekly', 1000000, 300000);
+  eq('G-05 first plan Tue: Mon expense ignored, Tue counted → (700.000−50.000)/5 = 130.000', [r.prior, r.plan.dailyAllowance], [50000, 130000]); }
+{ const d = D(); ex(d, '2026-10-19', 100000); const r1 = save(d, '2026-10-21', 'weekly', 1200000, 300000); const r2 = save(d, '2026-10-21', 'weekly', 1200000, 300000);
+  eq('G-05 same-day same numbers → same allowance', [r1.plan.dailyAllowance, r2.plan.dailyAllowance], [180000, 180000]); }
+{ const d = D(); save(d, '2026-10-01', 'monthly', 3000000, 520000); const R = recap(d, 'weekly', '2026-10-19').planInfo; const M = recap(d, 'monthly', '2026-10-19').planInfo;
+  eq('G-06 weekly recap w/ monthly plan = 7×80.000 = 560.000; monthly recap = 2.480.000', [R.portion, M.portion], [560000, 2480000]); }
+{ const { d } = ut60(); ex(d, '2026-10-21', 50000); eq('G-07 "(kurang Rp1)" at 550.000', save(d, '2026-10-22', 'weekly', 550000, 300000).error, 'Uang yang dibagi tidak cukup setelah dikurangi tabungan dan pengeluaran yang sudah terjadi (kurang Rp1)'); }
+{ const { d } = ut60(); ex(d, '2026-10-21', 50000); eq('G-07 "(kurang Rp2)" at 549.999', save(d, '2026-10-22', 'weekly', 549999, 300000).error.endsWith('(kurang Rp2)'), true); }
+for (const v of ['Rp 15.000', 'Rp15.000', 'rp15000', 'RP 15000']) eq(`BUG-09 "${v}" → 15000`, parseMoney(v).value, 15000);
+eq('BUG-08 intermediate "30.0000" regroups to 300.000', maskMoney('30.0000'), '300.000');
+eq('BUG-08 "300.000" accepted', parseMoney('300.000').value, 300000);
 { const d = D(); save(d, '2026-10-01', 'monthly', 3000000, 520000); ex(d, '2026-10-15', 90000); ex(d, '2026-10-19', 120000); ex(d, '2026-10-20', 80000);
   eq('UT-81 monthly→weekly 100.000', save(d, '2026-10-21', 'weekly', 1000000, 300000).plan.dailyAllowance, 100000); }
 eq('UT-82 pct .x5', [pct(15, 10000), pct(1005, 100000)], [0.2, 1]);
@@ -49,4 +61,5 @@ eq('UT-92/N-02 adjustment may be negative', parseMoney('-50.000', { allowNeg: tr
 eq('grouped ok', parseMoney('1.000.000').value, 1000000);
 { const p = { startDate: '2026-10-19', endDate: '2026-10-25', amountToAllocate: 1000000, savingAmount: 0 }; eq('BUG-04 last day 142.858', [B.fixedAllowanceOn(p, '2026-10-24'), B.fixedAllowanceOn(p, '2026-10-25')], [142857, 142858]); }
 eq('BUG-03 114% → over', B.status(800000, 700000), 'over');
+console.log(`regress.mjs: ${total - fail}/${total} checks passed`);
 process.exit(fail ? 1 : 0);

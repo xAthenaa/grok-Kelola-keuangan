@@ -2,7 +2,7 @@ import * as B from '../js/budget.js';
 import { recap, pct } from '../js/recap.js';
 import { recompute, totals } from '../js/balance.js';
 import { rp } from '../js/format.js';
-let fail = 0; const eq = (n, a, b) => { const ok = JSON.stringify(a) === JSON.stringify(b); if (!ok) fail++; console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : `got ${JSON.stringify(a)} want ${JSON.stringify(b)}`); };
+let fail = 0, total = 0; const eq = (n, a, b) => { total++; const ok = JSON.stringify(a) === JSON.stringify(b); if (!ok) fail++; console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : `got ${JSON.stringify(a)} want ${JSON.stringify(b)}`); };
 const wk = { startDate: '2026-10-19', endDate: '2026-10-25', amountToAllocate: 1000000, savingAmount: 300000, createdAt: 'x' };
 eq('AC4 weekly 100.000', B.fixedAllowanceOn(wk, '2026-10-19'), 100000);
 const mo = { startDate: '2026-10-01', endDate: '2026-10-31', amountToAllocate: 3000000, savingAmount: 520000, createdAt: 'x' };
@@ -32,4 +32,5 @@ eq('monthly recon', M.openBal + M.totalIncome - M.totalExpense + M.adjustTotal +
 const d2 = { ...data, transactions: [{ type: 'expense', amount: 200000, date: '2026-10-19' }] };
 eq('dynamic after Mon 200k', B.dynamicAllowanceOn(d2, wk, '2026-10-20'), Math.floor(500000 / 6));
 eq('rp format', [rp(15000), rp(-50000), rp(1000000)], ['Rp15.000', '-Rp50.000', 'Rp1.000.000']);
+console.log(`unit.mjs: ${total - fail}/${total} checks passed`);
 process.exit(fail ? 1 : 0);

@@ -4,7 +4,7 @@ import fs from 'fs';
 const BASE = process.env.KK_URL || 'http://localhost:8931/';
 const OUT = new URL('./output/', import.meta.url).pathname; fs.mkdirSync(OUT, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--no-sandbox'] });
-let fail = 0; const errs = []; const check = (n, ok, info = '') => { if (!ok) fail++; console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : info); };
+let fail = 0, total = 0; const errs = []; const check = (n, ok, info = '') => { total++; if (!ok) fail++; console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : info); };
 const ctx = await browser.newContext({ viewport: { width: 360, height: 900 }, timezoneId: 'Asia/Shanghai' });
 const p = await ctx.newPage(); p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => m.type() === 'error' && errs.push(m.text()));
 const at = async (day, hash) => { await p.clock.setFixedTime(new Date(`2026-10-${day}T12:00:00+08:00`)); await p.goto(BASE + hash); await p.reload(); await p.waitForTimeout(250); };
@@ -67,5 +67,38 @@ check('nothing saved by rejected inputs', (await nTx()) === n0);
 // UT-92 penyesuaian negatif tetap boleh
 await p.goto(BASE + '#akun'); await p.waitForTimeout(200); await p.click('[data-acc-adj]'); await p.fill('#adj-val', ''); await p.locator('#adj-val').pressSequentially('-50000'); await p.click('#adj-save'); await p.waitForTimeout(200);
 check('UT-92 adjustment to -Rp50.000 accepted', (await txt()).includes('-Rp50.000') && (await txt()).includes('Saldo akun jadi minus'));
+// BUG-08: ketik tombol demi tombol di SETIAP field nominal
+const typed = async (sel, v) => { await p.fill(sel, ''); await p.locator(sel).pressSequentially(v, { delay: 15 }); await p.waitForTimeout(50); return p.inputValue(sel); };
+const noErr = async (id) => ((await p.textContent('#' + id + '-err')) || '') === '';
+await p.evaluate(() => localStorage.clear()); await at('20', '#dashboard');
+check('BUG-08 onboarding saldo awal 300000 → 300.000', (await typed('#acc-init', '300000')) === '300.000' && await noErr('acc-init'));
+await p.fill('#acc-name', 'Dompet'); await p.click('#ob-save'); await p.waitForTimeout(150);
+check('BUG-08 onboarding saved 300000', (await store()).accounts[0]?.initialBalance === 300000);
+await p.goto(BASE + '#akun'); await p.waitForTimeout(150); await p.click('#acc-add'); await p.fill('#acc-name', 'BCA');
+check('BUG-08 account form 1250000 → 1.250.000', (await typed('#acc-init', '1250000')) === '1.250.000'); await p.click('#acc-save'); await p.waitForTimeout(150);
+check('BUG-08 account saved 1.250.000', (await store()).accounts[1]?.initialBalance === 1250000);
+await p.click('[data-acc-adj]'); check('BUG-08 adjustment field 275000 → 275.000', (await typed('#adj-val', '275000')) === '275.000'); await p.click('#adj-save'); await p.waitForTimeout(150);
+check('BUG-08 adjustment saved (−25.000)', (await store()).transactions.at(-1)?.amount === -25000);
+for (const [type, v, want] of [['expense', '300000', '300.000'], ['income', '4500000', '4.500.000'], ['transfer', '125000', '125.000']]) {
+  await p.click('#fab'); await p.click(`[data-type=${type}]`); const got = await typed('#tx-amt', v);
+  if (type === 'transfer') await p.selectOption('#tx-to', { index: 2 }); else await p.click('.chips label >> nth=0');
+  await p.click('#tx-save'); await p.waitForTimeout(150);
+  check(`BUG-08 tx ${type} typed ${v} → ${want}, saved`, got === want && (await store()).transactions.at(-1)?.amount === +v, got); }
+await p.click('#fab'); await p.click('[data-type=adjustment]'); check('BUG-08 tx adjustment field typed 280000', (await typed('#tx-amt', '280000')) === '280.000'); await p.keyboard.press('Escape');
+await p.click('#fab'); await typed('#tx-amt', 'Rp 15.000'); await p.click('.chips label >> nth=0'); await p.click('#tx-save'); await p.waitForTimeout(150);
+check('BUG-09 typed "Rp 15.000" saved as 15000', (await store()).transactions.at(-1)?.amount === 15000);
+await p.click('#fab'); await typed('#tx-amt', 'Rp15.000'); await p.click('.chips label >> nth=0'); await p.click('#tx-save'); await p.waitForTimeout(150);
+check('BUG-09 typed "Rp15.000" saved as 15000', (await store()).transactions.filter((t) => t.amount === 15000).length === 2);
+await p.goto(BASE + '#anggaran'); await p.waitForTimeout(200);
+const pa = await typed('#plan-amt', '1000000'), ps = await typed('#plan-saving', '300000');
+const msgs = await txt('#plan-msgs');
+check('BUG-08 plan form typed 1000000/300000: no error, Save enabled', pa === '1.000.000' && ps === '300.000' && !msgs.includes('bilangan bulat') && !(await p.isDisabled('#plan-save')), pa + ' ' + ps + ' ' + msgs);
+check('BUG-08 plan preview Rp116.666', (await txt('#plan-preview')).includes('Rp116.666'));
+await typed('#plan-amt', '12,5'); check('BUG-08 plan "12,5" still rejected', (await txt('#plan-msgs')).includes('bilangan bulat') && await p.isDisabled('#plan-save'));
+await typed('#plan-amt', '1000000'); await p.click('#plan-save'); await p.waitForTimeout(200);
+check('BUG-08 plan saved 1.000.000/300.000', (await store()).budgetPlans[0]?.amountToAllocate === 1000000);
+await p.click('#goal-add'); await p.fill('#g-name', 'Laptop'); const gt = await typed('#g-target', '8000000'), gs = await typed('#g-saved', '2000000'); await p.click('#g-save'); await p.waitForTimeout(150);
+check('BUG-08 goal fields typed 8.000.000 / 2.000.000, saved', gt === '8.000.000' && gs === '2.000.000' && (await store()).savingGoals[0]?.targetAmount === 8000000);
 check('no JS errors', errs.length === 0, errs.join('\n'));
+console.log(`regress-ui: ${total - fail}/${total} checks passed`);
 await browser.close(); process.exit(fail ? 1 : 0);

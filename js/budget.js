@@ -59,14 +59,24 @@ export function planSummary(data, p) {
   return { used, budget, remaining: budget - used, achieved: budget - used >= 0 };
 }
 
-// G-02 (v1.6, menggantikan O-06; juga memperbaiki BUG-01): saat rencana diganti/diedit, yang dikurangkan adalah
-// SEMUA pengeluaran dari awal periode rencana baru s/d kemarin, apa pun rencana yang aktif waktu itu.
+// Awal rantai penggantian: telusuri rencana pendahulu yang ditutup lebih awal tepat sehari sebelum rencana ini mulai
+export function chainStart(data, plan) {
+  let start = plan.startDate;
+  for (let guard = 0; guard < 400; guard++) {
+    const prev = data.budgetPlans.find((q) => q !== plan && q.closedEarly && q.endDate === addDays(start, -1));
+    if (!prev) break; start = prev.startDate;
+  }
+  return start;
+}
+// G-02 + G-05 (v1.8): saat rencana diganti/diedit, yang dikurangkan = pengeluaran dari
+// max(awal periode baru, startDate rencana pertama dalam rantai) s/d kemarin. Pengeluaran sebelum rencana pertama tidak dikurangkan.
 export function priorSpentFor(data, existing, newFullStart, t = today()) {
   if (!existing) return { prior: 0, from: null };
-  const yest = addDays(t, -1);
-  return { prior: newFullStart <= yest ? expenseBetween(data, newFullStart, yest) : 0, from: newFullStart };
+  const cs = chainStart(data, existing); const from = cs > newFullStart ? cs : newFullStart; const yest = addDays(t, -1);
+  return { prior: from <= yest ? expenseBetween(data, from, yest) : 0, from };
 }
-
+// G-07: pesan uang tidak cukup, X = kekurangan agar sisa jatah > 0 (sisa 0 → "kurang Rp1")
+export const insufficientMsg = (pool) => `Uang yang dibagi tidak cukup setelah dikurangi tabungan dan pengeluaran yang sudah terjadi (kurang Rp${String(1 - pool).replace(/\B(?=(\d{3})+(?!\d))/g, '.')})`;
 // Simpan rencana (F-11, F-11b, F-11c, A-04, A-13, O-03, G-02). Rencana aktif yang dibuat hari ini diubah di tempat;
 // selain itu rencana aktif ditutup per kemarin (jatah tetap aslinya dipertahankan) dan rencana baru mulai hari ini.
 export function savePlan(data, { period, amount, saving }, t = today(), now = new Date().toISOString(), id = null) {
@@ -74,7 +84,7 @@ export function savePlan(data, { period, amount, saving }, t = today(), now = ne
   const r = periodRange(period, t, true); const active = activePlan(data, t);
   const { prior } = priorSpentFor(data, active, r.fullStart, t);
   const pool = amount - saving - prior;
-  if (pool <= 0) return { error: `Uang yang dibagi tidak cukup setelah dikurangi tabungan dan pengeluaran yang sudah terjadi (Rp${String(Math.abs(pool)).replace(/\B(?=(\d{3})+(?!\d))/g, '.')}${pool < 0 ? ' kurang' : ''})`.replace('(Rp0)', '(Rp0)') };
+  if (pool <= 0) return { error: insufficientMsg(pool) };
   const plan = { period, startDate: r.start, endDate: r.end, amountToAllocate: amount, savingAmount: saving, priorSpent: prior, updatedAt: now };
   let result;
   if (active && active.startDate === t) { Object.assign(active, plan); result = active; }

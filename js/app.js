@@ -41,7 +41,7 @@ document.addEventListener('input', (e) => {
   const el = e.target; if (!el.matches('[data-money]')) return;
   if (!el.value) delete el.dataset.raw;
   el.value = F.maskMoney(el.value, !!el.dataset.raw);
-});
+}, true); // BUG-08: fase capture → mask berjalan SEBELUM listener validasi pada field (pratinjau rencana dll.)
 function setErr(id, msg) { const e = document.getElementById(id + '-err'); if (e) e.textContent = msg || ''; const i = document.getElementById(id); if (i) i.setAttribute('aria-invalid', msg ? 'true' : 'false'); }
 
 // ---------- Dialog ----------
@@ -359,7 +359,7 @@ function planForm(existing) {
     const update = () => { const hh = html(); const { A, Sv, perr } = calc(); let err = perr || (amt.value.trim() === '' ? null : B.validatePlan(A, Sv));
       if (!err && A > B.MAX_AMOUNT) err = 'Nominal maksimum Rp999.999.999.999';
       const pool = A - Sv - hh.prior;
-      if (!err && amt.value.trim() !== '' && pool <= 0) err = `Uang yang dibagi tidak cukup setelah dikurangi tabungan dan pengeluaran yang sudah terjadi (${rp(pool)})`; // O-03
+      if (!err && amt.value.trim() !== '' && pool <= 0) err = B.insufficientMsg(pool); // O-03/G-07
       const daily = pool > 0 ? Math.floor(pool / hh.days) : 0;
       $('#plan-preview').innerHTML = `<h3>Pratinjau</h3><div class="big">${rp(daily)} <span style="font-size:16px">/ hari</span></div>
         <p class="small num" style="margin:4px 0">(${F.groupDigits(A)} − ${F.groupDigits(Sv)}${hh.prior ? ' − ' + F.groupDigits(hh.prior) : ''}) / ${hh.days} hari</p>
