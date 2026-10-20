@@ -42,12 +42,18 @@ export function barChartSVG(rows, { width = 600, monthly = false, height = chart
     const kind = r.outside ? 'outside' : r.future ? 'future' : 'past';
     if (r.outside) {
       g += `<rect x="${(padL + colW * i + 1).toFixed(1)}" y="${padT}" width="${(colW - 2).toFixed(1)}" height="${plotH}" fill="url(#kk-hatch)" opacity=".5"/>`;
-      if (!monthly && colW >= 30) { const fs = colW >= 48 ? 10 : 8.5; g += `<text x="${cx.toFixed(1)}" y="${baseY - 18}" text-anchor="middle" font-size="${fs}" fill="#6B7280" data-kind="outside-label">di luar</text><text x="${cx.toFixed(1)}" y="${baseY - 6}" text-anchor="middle" font-size="${fs}" fill="#6B7280">rencana</text>`; }
+      // Label 12px: 2 baris jika muat (≥ 50px), selain itu vertikal
+      if (!monthly) g += colW >= 50
+        ? `<text x="${cx.toFixed(1)}" y="${baseY - 22}" text-anchor="middle" font-size="12" fill="#6B7280" data-kind="outside-label">di luar</text><text x="${cx.toFixed(1)}" y="${baseY - 8}" text-anchor="middle" font-size="12" fill="#6B7280" data-kind="outside-label">rencana</text>`
+        : `<text transform="translate(${(cx + 4).toFixed(1)},${baseY - 6}) rotate(-90)" font-size="12" fill="#6B7280" data-kind="outside-label">di luar rencana</text>`;
       prevFixed = null;
     } else {
       if (r.future) {
         const yy = y(r.fixed); g += `<rect x="${x.toFixed(1)}" y="${yy.toFixed(1)}" width="${bw.toFixed(1)}" height="${(baseY - yy).toFixed(1)}" rx="3" fill="none" stroke="#9CA3AF" stroke-width="1.2" stroke-dasharray="4 3" data-kind="future-outline"/>`;
-        if (!monthly && colW >= 64) g += `<text x="${cx.toFixed(1)}" y="${baseY - 6}" text-anchor="middle" font-size="9.5" fill="#6B7280">Mendatang</text>`; // kolom sempit: dijelaskan legenda
+        // Label "Mendatang" 12px: horizontal jika kolom ≥ 76px, selain itu vertikal di dalam kerangka putus-putus
+        if (!monthly) g += colW >= 76
+          ? `<text x="${cx.toFixed(1)}" y="${baseY - 8}" text-anchor="middle" font-size="12" fill="#6B7280" data-kind="future-label">Mendatang</text>`
+          : `<text transform="translate(${(cx + 4).toFixed(1)},${baseY - 6}) rotate(-90)" font-size="12" fill="#6B7280" data-kind="future-label">Mendatang</text>`;
       } else if (r.actual > 0) {
         const hh = Math.max(2, baseY - y(r.actual)); g += `<path d="${topRounded(x, baseY - hh, bw, hh, 6)}" fill="${ST_COLOR[r.status]}" data-kind="actual" data-status="${r.status}" data-w="${bw.toFixed(1)}"/>`;
       } else {

@@ -143,6 +143,24 @@ await at('21', '#anggaran'); ci = await chartInfo(); check('BUG-10 monthly "7 ha
 await p.click('[data-bv=m]'); await p.waitForTimeout(200); ci = await chartInfo();
 check('BUG-10 monthly "Bulan ini": 31 cols, 19 outside, internal scroll only', ci.cols === 31 && ci.outside === 19 && ci.sw <= 360, JSON.stringify(ci));
 await p.screenshot({ path: OUT + 'bug10-monthly-360.png', fullPage: true });
+// Kina: label "di luar rencana" & "Mendatang" selalu tampil, ≥12px, di 375/768/1280
+await seed(base([ex('2026-10-20', 9000)], [plan10])); await at('23', '#anggaran');
+for (const w of [375, 768, 1280]) { await p.setViewportSize({ width: w, height: 900 }); await p.waitForTimeout(300);
+  const L = await p.evaluate(() => { const q = (k) => [...document.querySelectorAll(`[data-chart] [data-kind=${k}]`)];
+    const info = (els) => els.map((t) => ({ fs: parseFloat(getComputedStyle(t).fontSize || t.getAttribute('font-size')), attr: +t.getAttribute('font-size'), h: t.getBoundingClientRect().height, w: t.getBoundingClientRect().width }));
+    const fut = [...document.querySelectorAll('[data-chart] g[data-kind=future]')].map((g) => !!g.querySelector('[data-kind=future-label]'));
+    return { out: info(q('outside-label')), fut: info(q('future-label')), futCols: fut, all: [...document.querySelectorAll('[data-chart] text')].map((t) => +t.getAttribute('font-size')) }; });
+  check(`labels ≥12px at ${w}px: "di luar rencana" + "Mendatang" on every future day (Sab, Min)`, L.out.length >= 1 && L.out.every((x) => x.attr >= 12 && x.h > 0) && L.futCols.length === 2 && L.futCols.every(Boolean) && L.fut.every((x) => x.attr >= 12 && x.h > 0), JSON.stringify(L));
+  await p.locator('section.card', { hasText: 'Jatah vs Aktual' }).first().screenshot({ path: `/workspace/kelola-keuangan/site-screens/chart-labels-after-${w}.png` }); }
+await p.setViewportSize({ width: 360, height: 900 }); await at('20', '#anggaran');
+// Bocil: sorotan baris "hari ini" menutup SELURUH baris (semua sel), juga di 360px
+for (const w of [360, 1280]) { await p.setViewportSize({ width: w, height: 900 }); await p.waitForTimeout(200);
+  const hl = await p.evaluate(() => { const tr = document.querySelector('table.daily tr.today'); if (!tr) return null;
+    const cells = [...tr.children]; const bgs = cells.map((c) => getComputedStyle(c).backgroundColor);
+    const tw = tr.closest('table').getBoundingClientRect(); const first = cells[0].getBoundingClientRect(), last = cells.at(-1).getBoundingClientRect();
+    return { n: cells.length, same: bgs.every((b) => b === bgs[0]), bg: bgs[0], spans: Math.abs(first.left - tw.left) < 1 && Math.abs(last.right - tw.right) < 1 }; });
+  check(`today row fully highlighted at ${w}px`, hl && hl.n === 4 && hl.same && hl.bg !== 'rgba(0, 0, 0, 0)' && hl.spans, JSON.stringify(hl)); }
+await p.setViewportSize({ width: 360, height: 900 });
 check('no JS errors', errs.length === 0, errs.join('\n'));
 console.log(`regress-ui [${BR}]: ${total - fail}/${total} checks passed`);
 await browser.close(); process.exit(fail ? 1 : 0);
