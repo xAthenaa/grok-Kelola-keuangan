@@ -101,3 +101,6 @@ dialog .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px;fl
   .split{display:grid;grid-template-columns:1fr 1fr;gap:16px}.split>.card{margin:0}
   #toast{bottom:32px}
 }
+
+/* BUG-06: tabel harian muat di 360px tanpa memotong badge */
+@media (max-width:479px){table.daily th,table.daily td{padding:6px 3px;font-size:12.5px}table.daily .badge{padding:2px 6px;font-size:11.5px}}

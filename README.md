@@ -7,4 +7,4 @@ Aplikasi web statis (HTML/CSS/JS vanilla, modul ES) untuk mencatat saldo cash & 
 - Hosting: GitHub Pages, branch `main`, folder root (`/`). File `.nojekyll` disertakan.
 - Jalankan lokal: `python3 -m http.server` lalu buka `http://localhost:8000` (modul ES butuh server HTTP).
 - Struktur: `index.html`, `css/style.css`, `js/app.js` (router + UI), `js/storage.js`, `js/balance.js`, `js/budget.js`, `js/recap.js`, `js/format.js`.
-- Tes: `tests/unit.mjs` (node), `tests/e2e.mjs` & `tests/split.mjs` (playwright-core + Chrome headless).
+- Tes: `tests/unit.mjs`, `tests/regress.mjs` (node, tanggal eksplisit); `tests/e2e.mjs`, `tests/regress-ui.mjs` (playwright-core + Chrome headless, jam dipalsukan ke 20–25 Okt 2026, UTC+8; set `KK_URL` ke server lokal). Output tes ke `tests/output/` (diabaikan git).

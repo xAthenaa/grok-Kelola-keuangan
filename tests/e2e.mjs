@@ -1,10 +1,13 @@
 import { chromium } from 'playwright-core';
 import fs from 'fs';
-const URL = 'http://localhost:8931/';
-const SHOTS = '/workspace/kelola-keuangan/site-screens'; fs.mkdirSync(SHOTS, { recursive: true });
+const URL = process.env.KK_URL || 'http://localhost:8931/';
+// BUG-07: output tes terpisah dari site-screens/
+const SHOTS = new globalThis.URL('./output/', import.meta.url).pathname; fs.mkdirSync(SHOTS, { recursive: true });
 const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox'] });
-const ctx = await browser.newContext({ viewport: { width: 375, height: 800 }, acceptDownloads: true });
-const page = await ctx.newPage(); const errors = [];
+const ctx = await browser.newContext({ viewport: { width: 375, height: 800 }, acceptDownloads: true, timezoneId: 'Asia/Shanghai' });
+const page = await ctx.newPage();
+// BUG-07: jam dipalsukan → Selasa 20 Okt 2026 12.00 (UTC+8)
+await page.clock.setFixedTime(new Date('2026-10-20T12:00:00+08:00')); const errors = [];
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message)); page.on('console', (m) => m.type() === 'error' && errors.push('console: ' + m.text()));
 let fail = 0; const check = (n, ok, info = '') => { if (!ok) fail++; console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : info); };
 const text = async (sel = 'main') => (await page.locator(sel).innerText()).replace(/\s+/g, ' ');
@@ -28,7 +31,7 @@ check('F-17 input auto titik', await (async () => { await page.click('#fab'); aw
 // validation AC7
 await page.click('#fab'); await save(); check('AC7 empty rejected', (await text('#dlg')).includes('Nominal wajib diisi'));
 await page.fill('#tx-amt', '0'); await save(); check('AC7 zero rejected', (await text('#dlg')).includes('lebih dari Rp0'));
-await page.fill('#tx-amt', '-5'); check('AC7 negative impossible (minus stripped)', (await page.inputValue('#tx-amt')) === '5');
+await page.fill('#tx-amt', ''); await page.locator('#tx-amt').pressSequentially('-5000'); await save(); check('AC7/G-04 negative rejected, not turned positive', (await text('#dlg')).includes('Nominal harus lebih dari 0') && (await page.inputValue('#tx-amt')) === '-5000');
 await page.keyboard.press('Escape');
 // AC2
 await addTx('expense', '25000', { acc: 'Dompet', cat: 'Makan & Minum' });

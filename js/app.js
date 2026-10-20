@@ -32,23 +32,15 @@ const amtText = (t) => (t.type === 'income' ? '+' + rp(t.amount) : t.type === 'e
 const badge = (st, extra = '') => `<span class="badge b-${st}">${B.STATUS_LABEL[st]}${extra}</span>`;
 const moneyField = (id, label, value = '', extra = '') => `<label for="${id}">${label}</label>
   <div class="money"><span aria-hidden="true">Rp</span><input id="${id}" name="${id}" inputmode="numeric" autocomplete="off" data-money value="${value === '' || value == null ? '' : F.groupDigits(value)}" ${extra} aria-describedby="${id}-err"></div><div class="err" id="${id}-err"></div>`;
-// Parse nominal: hanya bilangan bulat, maks 999.999.999.999 (A-14)
-function readMoney(input, { allowZero = false, allowNeg = false } = {}) {
-  const raw = input.value.trim();
-  if (!raw) return { error: 'Nominal wajib diisi' };
-  if (/[,]\d|\.\d{1,2}$/.test(raw) && !/^\-?\d{1,3}(\.\d{3})*$/.test(raw)) return { error: 'Nominal harus bilangan bulat (tanpa desimal)' };
-  if (!/^-?[\d.]+$/.test(raw)) return { error: 'Nominal hanya boleh angka' };
-  const v = F.toInt(raw);
-  if (v < 0 && !allowNeg) return { error: 'Nominal harus lebih dari Rp0' };
-  if (v === 0 && !allowZero) return { error: 'Nominal harus lebih dari Rp0' };
-  if (Math.abs(v) > B.MAX_AMOUNT) return { error: 'Nominal maksimum Rp999.999.999.999' };
-  return { value: v };
-}
+// Parse nominal: lihat F.parseMoney (A-14, AC-7, BUG-02/05)
+const readMoney = (input, opts) => F.parseMoney(input.value, opts);
+// Mask titik ribuan; begitu pengguna mengetik/menempel ',', '.', '-' atau huruf, field masuk "raw mode" (tidak diubah) agar bisa ditolak saat simpan
+document.addEventListener('beforeinput', (e) => { const el = e.target; if (!el.matches || !el.matches('[data-money]')) return;
+  if (e.data && /[^\d]/.test(e.data) && !(el.dataset.neg && e.data === '-' && el.selectionStart === 0)) el.dataset.raw = '1'; });
 document.addEventListener('input', (e) => {
   const el = e.target; if (!el.matches('[data-money]')) return;
-  const neg = el.dataset.neg && el.value.trim().startsWith('-');
-  const digits = el.value.replace(/\D/g, '').slice(0, 12);
-  el.value = (neg ? '-' : '') + (digits ? F.groupDigits(+digits) : '');
+  if (!el.value) delete el.dataset.raw;
+  el.value = F.maskMoney(el.value, !!el.dataset.raw);
 });
 function setErr(id, msg) { const e = document.getElementById(id + '-err'); if (e) e.textContent = msg || ''; const i = document.getElementById(id); if (i) i.setAttribute('aria-invalid', msg ? 'true' : 'false'); }
 
@@ -318,7 +310,7 @@ function barChart(rows, { monthly = false } = {}) {
     <ul class="legend row" style="gap:12px"><li><i style="background:#15803D"></i>Aman</li><li><i style="background:#D97706"></i>Hampir habis</li><li><i style="background:#DC2626"></i>Lewat</li><li><i style="background:#D1D5DB"></i>Mendatang</li><li><i style="background:#166534;height:3px"></i>Jatah tetap</li><li><i style="border-top:2px dashed #22C55E;height:0;background:none"></i>Jatah dinamis (info)</li></ul>`;
 }
 function rowsTable(rows) {
-  return `<div class="tablewrap"><table><caption class="sr">Jatah vs aktual per hari</caption><thead><tr><th scope="col">Hari</th><th scope="col" class="r">Jatah tetap</th><th scope="col" class="r">Aktual</th><th scope="col">Status</th></tr></thead><tbody>${rows.map((r) =>
+  return `<div class="tablewrap" tabindex="0" role="region" aria-label="Tabel jatah vs aktual per hari"><table class="daily"><caption class="sr">Jatah vs aktual per hari</caption><thead><tr><th scope="col">Hari</th><th scope="col" class="r">Jatah tetap</th><th scope="col" class="r">Aktual</th><th scope="col">Status</th></tr></thead><tbody>${rows.map((r) =>
     `<tr class="${r.isToday ? 'today' : ''}"><th scope="row" style="font-weight:500">${F.dayShort(r.date)} ${F.parse(r.date).getDate()}${r.isToday ? ' (hari ini)' : ''}</th><td class="r">${r.outside ? '—' : rp(r.fixed)}</td><td class="r">${r.future ? '—' : rp(r.actual)}</td><td>${r.outside ? badge('none') : badge(r.status)}</td></tr>`).join('')}</tbody></table></div>`;
 }
 function heatmap(rows) {
@@ -338,13 +330,12 @@ function planForm(existing) {
   const t = today(); const yest = F.addDays(t, -1);
   let period = existing ? existing.period : 'weekly';
   const totalBal = totals(data).total;
-  const isEdit = !!existing; const inPlace = existing && existing.startDate === t;
+  const isEdit = !!existing;
   const html = () => {
     const r = B.periodRange(period, t, true); const days = F.diffDays(r.start, r.end) + 1;
     // O-05/O-06: pengeluaran rencana lama dari max(start lama, awal periode baru) s/d kemarin
-    const priorFrom = existing && !inPlace ? (existing.startDate > r.fullStart ? existing.startDate : r.fullStart) : null;
-    const prior = priorFrom && priorFrom <= yest ? B.expenseBetween(data, priorFrom, yest) : 0;
-    const incInfo = existing && !inPlace ? B.incomeBetween(data, existing.startDate, t) : 0;
+    const { prior, from: priorFrom } = B.priorSpentFor(data, existing, r.fullStart, t);
+    const incInfo = existing ? B.incomeBetween(data, priorFrom, t) : 0;
     return { r, days, prior, incInfo, priorFrom, markup: `<form id="plan-form" novalidate>
     <fieldset style="border:0;padding:0;margin:0"><legend style="font-weight:600;font-size:14px;margin-bottom:4px">Periode</legend>
     <div class="seg">${[['weekly', 'Mingguan'], ['monthly', 'Bulanan']].map(([k, l]) => `<label><input type="radio" name="period" value="${k}" ${k === period ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div></fieldset>
@@ -363,8 +354,9 @@ function planForm(existing) {
     $$('input[name=period]', root).forEach((i) => (i.onchange = () => { const a = amt.value, s = sav.value; period = i.value; mount(); $('#plan-amt').value = a; $('#plan-saving').value = s; $(`input[name=period][value=${period}]`).focus(); update(); }));
     $('#use-bal', root).onclick = () => { amt.value = F.groupDigits(Math.max(0, totalBal)); update(); };
     $('#plan-cancel', root).onclick = () => render();
-    const calc = () => { const A = F.toInt(amt.value), Sv = sav.value.trim() === '' ? 0 : F.toInt(sav.value); return { A, Sv }; };
-    const update = () => { const hh = html(); const { A, Sv } = calc(); let err = amt.value.trim() === '' ? null : B.validatePlan(A, Sv);
+    const calc = () => { const pa = F.parseMoney(amt.value, { allowZero: true }), ps = sav.value.trim() === '' ? { value: 0 } : F.parseMoney(sav.value, { allowZero: true });
+      return { A: pa.value ?? 0, Sv: ps.value ?? 0, perr: amt.value.trim() !== '' && pa.error ? pa.error : ps.error || null }; };
+    const update = () => { const hh = html(); const { A, Sv, perr } = calc(); let err = perr || (amt.value.trim() === '' ? null : B.validatePlan(A, Sv));
       if (!err && A > B.MAX_AMOUNT) err = 'Nominal maksimum Rp999.999.999.999';
       const pool = A - Sv - hh.prior;
       if (!err && amt.value.trim() !== '' && pool <= 0) err = `Uang yang dibagi tidak cukup setelah dikurangi tabungan dan pengeluaran yang sudah terjadi (${rp(pool)})`; // O-03
@@ -378,10 +370,7 @@ function planForm(existing) {
     $('#plan-form', root).onsubmit = async (e) => { e.preventDefault(); const { err, A, Sv, hh } = update(); if (err) return;
       const active = B.activePlan(data); const now = new Date().toISOString();
       if (active && !(await confirmDialog('Ganti rencana aktif?', active.startDate === t ? 'Rencana aktif (dibuat hari ini) akan diganti dengan isian baru.' : `Rencana aktif akan berakhir kemarin (${F.fmtDate(yest)}) dan disimpan di riwayat. Rencana baru berlaku mulai hari ini.`, 'Ya, ganti'))) return;
-      const plan = { period, startDate: hh.r.start, endDate: hh.r.end, amountToAllocate: A, savingAmount: Sv, priorSpent: hh.prior, updatedAt: now };
-      if (active && active.startDate === t) { Object.assign(active, plan); active.dailyAllowance = B.fixedAllowanceOn(active, active.startDate); }
-      else { if (active) { active.dailyAllowance = B.fixedAllowanceOn(active, active.startDate); active.originalEndDate = active.endDate; active.endDate = yest; active.closedEarly = true; active.updatedAt = now; }
-        const np = { id: F.uid(), ...plan, createdAt: now }; np.dailyAllowance = Math.floor(Math.max(0, B.planPool(np)) / B.planDays(np)); data.budgetPlans.push(np); }
+      const res = B.savePlan(data, { period, amount: A, saving: Sv }, t, now); if (res.error) { $('#plan-msgs').innerHTML = `<p class="note bad" role="alert">✖ ${esc(res.error)}</p>`; return; }
       persist('Rencana tersimpan'); };
   };
   mount(); $('#plan-amt').focus();
@@ -394,14 +383,14 @@ function pageAnggaran() {
     const sm = B.planSummary(data, p); const fixed = B.fixedAllowanceOn(p, t), dyn = B.dynamicAllowanceOn(data, p, t), spentToday = B.expenseOn(data, t);
     const rem = F.diffDays(t, p.endDate) + 1; let from = p.startDate, to = p.endDate;
     if (p.period === 'monthly' && ui.budgetView === '7') { from = F.weekStart(t) < p.startDate ? p.startDate : F.weekStart(t); to = F.weekEnd(t) > p.endDate ? p.endDate : F.weekEnd(t); }
-    const rows = B.dailyRows(data, p, from, to); const ratio = sm.budget ? Math.min(100, Math.round((sm.used * 100) / sm.budget)) : 0;
+    const rows = B.dailyRows(data, p, from, to); const usedPct = sm.budget ? Math.round((sm.used * 100) / sm.budget) : (sm.used > 0 ? 101 : 0); const usedSt = B.status(sm.used, sm.budget); const ratio = Math.min(100, usedPct); // BUG-03: status dari nilai asli sebelum dibatasi
     main = `<section class="card"><div class="row between"><h3 style="margin:0">Rencana aktif · ${p.period === 'weekly' ? 'Mingguan' : 'Bulanan'}</h3>
       <div class="row"><button class="btn sm" type="button" id="plan-edit">Ubah</button><button class="btn sm text expense" type="button" id="plan-del">Hapus</button></div></div>
       <p class="muted small" style="margin:4px 0 8px">${F.fmtDate(p.startDate)} s/d ${F.fmtDateLong(p.endDate)} (${B.planDays(p)} hari)</p>
       <p style="margin:0">Dibagi <b class="num">${rp(p.amountToAllocate)}</b> · Ditabung <b class="num">${rp(p.savingAmount)}</b>${p.priorSpent ? ` · Sudah terpakai sebelumnya <b class="num">${rp(p.priorSpent)}</b>` : ''}</p>
-      <div class="grid g2" style="margin-top:12px"><div><div class="small muted">Jatah tetap</div><div class="big" style="font-size:22px">${rp(p.dailyAllowance ?? fixed)}<span class="small">/hari</span></div></div>
+      <div class="grid g2" style="margin-top:12px"><div><div class="small muted">Jatah tetap</div><div class="big" style="font-size:22px">${rp(fixed)}<span class="small">/hari</span></div></div>
       <div><div class="small muted">Jatah dinamis (info, sisa ${rem} hari)</div><div class="big ${dyn < 0 ? 'expense' : ''}" style="font-size:22px">${rp(dyn)}<span class="small">/hari</span></div>${dyn < 0 ? '<div class="small expense">⚠ Jatah sudah terlampaui</div>' : ''}</div></div>
-      <p style="margin:12px 0 0">Terpakai <b class="num">${rp(sm.used)}</b> / ${rp(sm.budget)}</p><div class="bar ${ratio > 100 ? 'over' : ratio > 80 ? 'warn' : ''}" role="img" aria-label="Terpakai ${ratio}%"><i style="width:${ratio}%"></i></div>
+      <p style="margin:12px 0 0" id="plan-used">Terpakai <b class="num">${rp(sm.used)}</b> / ${rp(sm.budget)} (<span class="${usedSt === 'over' ? 'expense' : ''}">${usedPct}%</span>) ${badge(usedSt)}</p><div class="bar ${usedSt === 'safe' ? '' : usedSt}" role="img" aria-label="Terpakai ${usedPct}%${usedSt === 'over' ? ', melebihi jatah' : ''}"><i style="width:${ratio}%"></i></div>
       <div class="row between"><span>Sisa jatah hari ini <b class="num ${fixed - spentToday < 0 ? 'expense' : ''}">${rp(fixed - spentToday)}</b></span>${badge(B.status(spentToday, fixed))}</div></section>
       <section class="card"><div class="row between"><h3 style="margin:0">Jatah vs Aktual</h3>${p.period === 'monthly' ? `<div class="seg" role="group" aria-label="Rentang grafik"><button type="button" data-bv="7" aria-pressed="${ui.budgetView === '7'}">7 hari</button><button type="button" data-bv="m" aria-pressed="${ui.budgetView !== '7'}">Bulan ini</button></div>` : ''}</div>
       ${barChart(rows, { monthly: rows.length > 7 })}${rows.length > 7 ? `<details style="margin-top:12px"><summary>Kalender (heatmap)</summary>${heatmap(rows)}</details>` : ''}${rowsTable(rows)}</section>`;
@@ -456,21 +445,22 @@ function pageRekap() {
     <div class="stat"><span class="small muted">Saldo awal</span><b>${rp(R.openBal)}</b></div><div class="stat"><span class="small muted">Pemasukan</span><b class="income">+${rp(R.totalIncome)}</b></div>
     <div class="stat"><span class="small muted">Pengeluaran</span><b class="expense">-${rp(R.totalExpense)}</b></div><div class="stat"><span class="small muted">Saldo akhir</span><b>${rp(R.closeBal)}</b></div>
     <div class="stat"><span class="small muted">Selisih (net)</span><b class="${R.net < 0 ? 'expense' : 'income'}">${rpSigned(R.net)}</b></div></div>
-  <section class="card"><h3>Rekonsiliasi saldo</h3><div class="tablewrap"><table><tbody>
+  <section class="card"><h3>Rekonsiliasi saldo</h3><div class="tablewrap" tabindex="0" role="region" aria-label="Tabel rekonsiliasi saldo"><table><tbody>
     <tr><th scope="row">Saldo awal</th><td class="r">${rp(R.openBal)}</td></tr><tr><th scope="row">+ Pemasukan</th><td class="r">${rp(R.totalIncome)}</td></tr><tr><th scope="row">− Pengeluaran</th><td class="r">${rp(R.totalExpense)}</td></tr>
     ${R.adjustTotal ? `<tr><th scope="row">± Penyesuaian (${R.adjustCount})</th><td class="r">${rpSigned(R.adjustTotal)}</td></tr>` : ''}
     ${R.newAccOpening ? `<tr><th scope="row">+ Saldo awal akun baru (${R.newAccounts.map((a) => esc(a.name)).join(', ')})</th><td class="r">${rpSigned(R.newAccOpening)}</td></tr>` : ''}
     <tr><th scope="row">= Saldo akhir</th><td class="r"><b>${rp(recon)}</b>${recon !== R.closeBal ? ' ⚠' : ''}</td></tr></tbody></table></div>
     ${R.transferCount ? `<p class="small muted">${R.transferCount} transfer antar akun tidak dihitung sebagai pemasukan/pengeluaran.</p>` : ''}</section>
-  ${pi ? `<section class="card"><h3>Rencana jatah ${word} ini${pi.splitDates.length ? ` <span class="small muted">(rencana diubah ${pi.splitDates.map(F.fmtDate).join(', ')})</span>` : ''}</h3>
+  ${pi ? `<section class="card"><h3>Rencana jatah ${word} ini</h3>
     ${pi.showSaving ? `<p style="margin:0">Dibagi <b class="num">${rp(pi.last.amountToAllocate)}</b> · Ditabung <b class="num">${rp(pi.last.savingAmount)}</b> · Jatah <b class="num">${rp(pi.last.dailyAllowance)}</b>/hari</p>` : '<p class="small muted" style="margin:0">Rencana bulanan aktif: ringkasan tabungan ada di rekap bulanan.</p>'}
     <p style="margin:8px 0 0">Jatah ${word} ini <b class="num">${rp(pi.portion)}</b> · Terpakai <b class="num">${rp(pi.used)}</b> · Sisa jatah <b class="num ${pi.remaining < 0 ? 'expense' : ''}">${rp(pi.remaining)}</b>
     ${pi.showSaving ? (pi.achieved ? '<span class="badge b-safe">✔ Sesuai rencana</span>' : '<span class="badge b-over">✖ Melebihi</span>') : ''}</p>
+    ${pi.replacedCount ? `<p class="small muted" style="margin:4px 0 0" id="replaced-note">Rencana diganti ${pi.replacedCount} kali, jatah harian mengikuti rencana yang berlaku di hari itu.</p>` : ''}
     <p class="small muted" style="margin:4px 0 0">Hari Lewat: ${pi.overDays}/${pi.rows.filter((r) => !r.outside).length}${pi.showSaving ? ` · Tabungan dicatat manual — target jangka panjang terkumpul ${rp(data.savingGoals.reduce((s, g) => s + g.savedAmount, 0))}` : ''}</p></section>` : ''}
   <div class="split"><section class="card"><h3>Pengeluaran per kategori</h3>${donut(R.expenseByCat, R.totalExpense)}</section>
   <section class="card"><h3>Pemasukan per kategori</h3>${R.incomeByCat.length ? `<ul class="legend">${R.incomeByCat.map((it) => `<li style="display:block"><div class="row between"><span>${esc(catName(it.categoryId))}</span><span class="num"><b>${rp(it.amount)}</b> <span class="muted">${pctStr(it.pct)}</span></span></div><div class="bar"><i style="width:${it.pct}%"></i></div></li>`).join('')}</ul>` : '<p class="muted">Belum ada data.</p>'}</section></div>
   ${pi ? `<section class="card" style="margin-top:16px"><h3>Jatah vs Aktual</h3>${barChart(pi.rows, { monthly: m === 'monthly' })}${m === 'monthly' ? `<details style="margin-top:12px"><summary>Kalender (heatmap)</summary>${heatmap(pi.rows)}</details>` : ''}${rowsTable(pi.rows)}</section>` : ''}
-  ${m === 'monthly' ? `<section class="card" style="margin-top:16px"><h3>Ringkasan per minggu</h3><div class="tablewrap"><table><thead><tr><th scope="col">Minggu</th><th scope="col">Rentang</th><th scope="col" class="r">Pemasukan</th><th scope="col" class="r">Pengeluaran</th></tr></thead><tbody>${R.weeks.map((w) => `<tr><th scope="row">${w.label}</th><td>${F.parse(w.start).getDate()}–${F.parse(w.end).getDate()}</td><td class="r">${rp(w.income)}</td><td class="r">${rp(w.expense)}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
+  ${m === 'monthly' ? `<section class="card" style="margin-top:16px"><h3>Ringkasan per minggu</h3><div class="tablewrap" tabindex="0" role="region" aria-label="Tabel ringkasan per minggu"><table><thead><tr><th scope="col">Minggu</th><th scope="col">Rentang</th><th scope="col" class="r">Pemasukan</th><th scope="col" class="r">Pengeluaran</th></tr></thead><tbody>${R.weeks.map((w) => `<tr><th scope="row">${w.label}</th><td>${F.parse(w.start).getDate()}–${F.parse(w.end).getDate()}</td><td class="r">${rp(w.income)}</td><td class="r">${rp(w.expense)}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
   <div class="split" style="margin-top:16px"><section class="card"><h3>3 pengeluaran terbesar</h3>${R.top3.length ? `<ol class="list">${R.top3.map((t) => txItem(t, false)).join('')}</ol>` : '<p class="muted">Belum ada pengeluaran.</p>'}
     <p style="margin:12px 0 0">vs ${word} lalu: ${R.changePct == null ? '<b>—</b> <span class="muted small">belum ada data</span>' : `Pengeluaran <b class="${R.changePct > 0 ? 'expense' : 'income'}">${R.changePct > 0 ? '▲' : R.changePct < 0 ? '▼' : '='} ${pctStr(Math.abs(R.changePct))}</b> <span class="small muted">(${rp(R.prevExpense)} → ${rp(R.totalExpense)})</span>`}</p></section>
   <section class="card"><h3>Per akun</h3><ul class="list">${R.accounts.map((a) => `<li><span class="ic" aria-hidden="true">${ACC_ICON[a.account.type]}</span><div class="grow"><div class="t">${esc(a.account.name)}</div></div><div class="num">${rp(a.open)} → <b>${rp(a.close)}</b></div></li>`).join('')}</ul></section></div>`;

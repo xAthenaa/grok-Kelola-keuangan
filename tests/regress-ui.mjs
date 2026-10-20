@@ -1,0 +1,71 @@
+// Regresi UI BUG-01..06 + N-03, dengan jam dipalsukan (BUG-07)
+import { chromium } from 'playwright-core';
+import fs from 'fs';
+const BASE = process.env.KK_URL || 'http://localhost:8931/';
+const OUT = new URL('./output/', import.meta.url).pathname; fs.mkdirSync(OUT, { recursive: true });
+const browser = await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--no-sandbox'] });
+let fail = 0; const errs = []; const check = (n, ok, info = '') => { if (!ok) fail++; console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : info); };
+const ctx = await browser.newContext({ viewport: { width: 360, height: 900 }, timezoneId: 'Asia/Shanghai' });
+const p = await ctx.newPage(); p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => m.type() === 'error' && errs.push(m.text()));
+const at = async (day, hash) => { await p.clock.setFixedTime(new Date(`2026-10-${day}T12:00:00+08:00`)); await p.goto(BASE + hash); await p.reload(); await p.waitForTimeout(250); };
+const txt = async (sel = 'main') => (await p.innerText(sel)).replace(/\s+/g, ' ');
+const store = () => p.evaluate(() => JSON.parse(localStorage.kk_data_v1));
+const seed = (d) => p.evaluate((d) => { localStorage.clear(); localStorage.kk_data_v1 = JSON.stringify(d); }, d);
+const ex = (date, amount) => ({ id: 'x' + date + amount, date, type: 'expense', amount, accountId: 'c', categoryId: 'expense-1', note: '', createdAt: date + 'T10:00:00Z' });
+const base = (tx, plans) => ({ settings: { schemaVersion: 1 }, accounts: [{ id: 'c', name: 'Dompet', type: 'cash', initialBalance: 2000000, archived: false, createdAt: '2026-10-01T08:00:00' }], transactions: tx, budgetPlans: plans });
+const weekly = { id: 'p1', period: 'weekly', startDate: '2026-10-19', endDate: '2026-10-25', amountToAllocate: 1000000, savingAmount: 300000, dailyAllowance: 100000, createdAt: '2026-10-19T01:00:00Z', updatedAt: '2026-10-19T01:00:00Z' };
+async function editPlan(amount, saving) { await p.click('#plan-edit'); await p.fill('#plan-amt', amount); await p.fill('#plan-saving', saving); await p.waitForTimeout(100); const preview = await txt('#plan-preview'); await p.click('#plan-save'); await p.click('[data-yes]'); await p.waitForTimeout(200); return preview; }
+
+// BUG-01 / UT-60 / UT-88 / UT-86
+await p.goto(BASE); await seed(base([ex('2026-10-19', 120000), ex('2026-10-20', 80000)], [weekly]));
+await at('21', '#anggaran');
+let pv = await editPlan('1200000', '300000'); check('UT-60 Wed edit → 140.000 + "Sudah terpakai Rp200.000"', pv.includes('Rp140.000') && (await txt()).includes('Rp140.000'), pv);
+await p.click('#plan-edit'); await p.waitForTimeout(100); const form = await txt();
+check('BUG-01 re-edit same day: form still shows Sudah terpakai Rp200.000', form.includes('Sudah terpakai Rp200.000'), form.slice(0, 500));
+await p.click('#plan-cancel'); pv = await editPlan('1200000', '300000');
+let plans = (await store()).budgetPlans; let act = plans.find((x) => x.startDate === '2026-10-21');
+check('BUG-01/UT-88 re-edit same day keeps 140.000, priorSpent 200.000', pv.includes('Rp140.000') && act.dailyAllowance === 140000 && act.priorSpent === 200000 && plans.length === 2, JSON.stringify(act));
+await p.evaluate(() => { const d = JSON.parse(localStorage.kk_data_v1); d.transactions.push({ id: 'w', date: '2026-10-21', type: 'expense', amount: 50000, accountId: 'c', categoryId: 'expense-1', note: '', createdAt: 'x' }); localStorage.kk_data_v1 = JSON.stringify(d); });
+await at('22', '#anggaran'); pv = await editPlan('1200000', '300000');
+act = (await store()).budgetPlans.find((x) => x.startDate === '2026-10-22');
+check('UT-86 Thu re-edit → 162.500', act && act.dailyAllowance === 162500 && pv.includes('Rp162.500'), pv);
+// N-03 rekap
+await p.click('.bottomnav a[href="#rekap"]'); await p.waitForTimeout(200); let r = await txt();
+check('UT-93/94 rekap jatah 900.000, sisa 650.000', r.includes('Jatah minggu ini Rp900.000') && r.includes('Sisa jatah Rp650.000'), r.slice(0, 900));
+check('UT-96 note "Rencana diganti 2 kali, …"', r.includes('Rencana diganti 2 kali, jatah harian mengikuti rencana yang berlaku di hari itu'));
+check('old "(rencana diubah …)" text gone', !r.includes('rencana diubah'));
+// BUG-06: tablewrap focusable & badge tidak terpotong di 360px
+const tw = await p.$$eval('.tablewrap', (els) => els.map((e) => [e.getAttribute('tabindex'), e.getAttribute('role'), !!e.getAttribute('aria-label'), e.scrollWidth <= e.clientWidth + 1]));
+check('BUG-06 every .tablewrap tabindex=0 role=region aria-label', tw.length > 0 && tw.every((x) => x[0] === '0' && x[1] === 'region' && x[2]), JSON.stringify(tw));
+await at('22', '#anggaran');
+const fit = await p.$$eval('table.daily', (ts) => ts.map((t) => t.parentElement.scrollWidth <= t.parentElement.clientWidth + 1));
+const clipped = await p.$$eval('table.daily .badge', (bs) => bs.filter((b) => b.scrollWidth > b.clientWidth + 1).length);
+check('BUG-06 daily table fits 360px, no clipped badges', fit.every(Boolean) && clipped === 0, JSON.stringify(fit) + ' clipped=' + clipped);
+await p.focus('.tablewrap'); check('BUG-06 table region focusable via keyboard', await p.evaluate(() => document.activeElement.classList.contains('tablewrap')));
+await p.screenshot({ path: OUT + 'anggaran-360-regress.png', fullPage: true });
+// UT-97 single plan: no note
+await seed(base([], [weekly])); await at('20', '#rekap'); r = await txt();
+check('UT-97 no replacement note, jatah 700.000', !r.includes('Rencana diganti') && r.includes('Jatah minggu ini Rp700.000'));
+// BUG-03: 800.000 / 700.000 = 114% → merah
+await seed(base([ex('2026-10-20', 800000)], [weekly])); await at('23', '#anggaran');
+const barCls = await p.getAttribute('#plan-used + .bar', 'class'); r = await txt('#plan-used');
+check('BUG-03 bar red (over) + real 114%', barCls.includes('over') && r.includes('114%') && r.includes('Lewat'), barCls + ' | ' + r);
+// BUG-04: Minggu 25 Okt kartu jatah tetap = 142.858
+await seed(base([], [{ ...weekly, savingAmount: 0, dailyAllowance: 142857 }])); await at('25', '#anggaran'); r = await txt();
+const card = (await txt('#plan-slot section')).split('Jatah dinamis')[0]; const today = await txt('tr.today');
+check('BUG-04 last-day card Rp142.858 = table today row', card.includes('Rp142.858/hari') && !card.includes('142.857') && today.includes('Rp142.858'), card + ' | ' + today);
+// BUG-02 / BUG-05 / G-04 input
+await at('20', '#dashboard');
+const typeAmt = async (v) => { await p.click('#fab'); await p.locator('#tx-amt').pressSequentially(v); await p.click('.chips label >> nth=0'); await p.click('#tx-save'); await p.waitForTimeout(100);
+  const e = await txt('#dlg'); const val = await p.inputValue('#tx-amt'); await p.keyboard.press('Escape'); return { e, val }; };
+const nTx = async () => (await store()).transactions.length; const n0 = await nTx();
+for (const v of ['12,5', '12.5']) { const { e, val } = await typeAmt(v); check(`BUG-02 "${v}" rejected, input not altered`, e.includes('Nominal harus bilangan bulat') && val === v, e.slice(0, 200) + ' val=' + val); }
+{ const { e, val } = await typeAmt('1000000000000'); check('BUG-05 13 digits rejected, not truncated', e.includes('Nominal maksimum Rp999.999.999.999') && val === '1.000.000.000.000', val); }
+{ const { e, val } = await typeAmt('-5000'); check('G-04/UT-91 "-5000" rejected', e.includes('Nominal harus lebih dari 0') && val === '-5000', val); }
+check('nothing saved by rejected inputs', (await nTx()) === n0);
+{ await p.click('#fab'); await p.locator('#tx-amt').pressSequentially('25000'); check('mask still groups digits', (await p.inputValue('#tx-amt')) === '25.000'); await p.keyboard.press('Escape'); }
+// UT-92 penyesuaian negatif tetap boleh
+await p.goto(BASE + '#akun'); await p.waitForTimeout(200); await p.click('[data-acc-adj]'); await p.fill('#adj-val', ''); await p.locator('#adj-val').pressSequentially('-50000'); await p.click('#adj-save'); await p.waitForTimeout(200);
+check('UT-92 adjustment to -Rp50.000 accepted', (await txt()).includes('-Rp50.000') && (await txt()).includes('Saldo akun jadi minus'));
+check('no JS errors', errs.length === 0, errs.join('\n'));
+await browser.close(); process.exit(fail ? 1 : 0);

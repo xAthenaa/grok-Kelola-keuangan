@@ -4,7 +4,8 @@ import { balanceAt, totals } from './balance.js';
 import { dailyRows, fixedAllowanceOn } from './budget.js';
 
 // O-09: persen dengan bilangan bulat
-export const pct = (part, total) => Math.round((part * 1000) / total) / 10;
+// G-03: pembulatan simetris (−12,25% → −12,3%), tetap bilangan bulat sesuai O-09
+export const pct = (part, total) => { const v = Math.round((Math.abs(part) * 1000) / Math.abs(total)) / 10; return (part < 0) !== (total < 0) && v !== 0 ? -v : v; };
 export function recapRange(mode, anyDate) {
   if (mode === 'monthly') { const start = monthStart(anyDate), end = monthEnd(anyDate); const ps = monthStart(addDays(start, -1)); return { start, end, prevStart: ps, prevEnd: addDays(start, -1) }; }
   const start = weekStart(anyDate); return { start, end: addDays(start, 6), prevStart: addDays(start, -7), prevEnd: addDays(start, -1) };
@@ -38,7 +39,9 @@ export function recap(data, mode, anyDate) {
     for (let d = start; d <= end; d = addDays(d, 1)) { const p = plans.find((q) => q.startDate <= d && d <= q.endDate) || plans[0]; rows.push({ ...dailyRows(data, p, d, d)[0], planId: p.id }); }
     const last = plans[plans.length - 1];
     const hasMonthly = plans.some((p) => p.period === 'monthly');
-    planInfo = { plans, last, showSaving: !(mode === 'weekly' && hasMonthly), /* A-11 */ portion, used, remaining: portion - used, achieved: portion - used >= 0, rows, splitDates: plans.slice(1).map((p) => p.startDate),
+    // N-03: jatah periode = uang dibagi − tabungan dari rencana TERAKHIR; dailyPortion = jumlah jatah tetap harian (grafik)
+    const periodBudget = last.amountToAllocate - last.savingAmount;
+    planInfo = { plans, last, showSaving: !(mode === 'weekly' && hasMonthly), /* A-11 */ portion: periodBudget, dailyPortion: portion, replacedCount: plans.length - 1, used, remaining: periodBudget - used, achieved: periodBudget - used >= 0, rows, splitDates: plans.slice(1).map((p) => p.startDate),
       overDays: rows.filter((r) => r.status === 'over').length };
   }
   const weeks = [];

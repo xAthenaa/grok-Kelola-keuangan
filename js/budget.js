@@ -13,7 +13,7 @@ export function validatePlan(amount, saving) {
   if (saving >= amount) return 'Jumlah tabungan harus lebih kecil dari uang yang dibagi';
   return null;
 }
-export const MAX_AMOUNT = 999999999999;
+export { MAX_AMOUNT } from './format.js';
 // A-04: priorSpent = pengeluaran yang sudah terjadi di rencana lama (periode yang sama) saat rencana diganti
 export const planPool = (p) => p.amountToAllocate - p.savingAmount - (p.priorSpent || 0);
 export const calcDaily = (amount, saving, days, prior = 0) => Math.max(0, Math.floor((amount - saving - prior) / days));
@@ -57,4 +57,31 @@ export function planSummary(data, p) {
   const used = expenseBetween(data, p.startDate, p.endDate);
   const budget = p.closedEarly ? p.dailyAllowance * planDays(p) : Math.max(0, planPool(p));
   return { used, budget, remaining: budget - used, achieved: budget - used >= 0 };
+}
+
+// G-02 (v1.6, menggantikan O-06; juga memperbaiki BUG-01): saat rencana diganti/diedit, yang dikurangkan adalah
+// SEMUA pengeluaran dari awal periode rencana baru s/d kemarin, apa pun rencana yang aktif waktu itu.
+export function priorSpentFor(data, existing, newFullStart, t = today()) {
+  if (!existing) return { prior: 0, from: null };
+  const yest = addDays(t, -1);
+  return { prior: newFullStart <= yest ? expenseBetween(data, newFullStart, yest) : 0, from: newFullStart };
+}
+
+// Simpan rencana (F-11, F-11b, F-11c, A-04, A-13, O-03, G-02). Rencana aktif yang dibuat hari ini diubah di tempat;
+// selain itu rencana aktif ditutup per kemarin (jatah tetap aslinya dipertahankan) dan rencana baru mulai hari ini.
+export function savePlan(data, { period, amount, saving }, t = today(), now = new Date().toISOString(), id = null) {
+  const err = validatePlan(amount, saving); if (err) return { error: err };
+  const r = periodRange(period, t, true); const active = activePlan(data, t);
+  const { prior } = priorSpentFor(data, active, r.fullStart, t);
+  const pool = amount - saving - prior;
+  if (pool <= 0) return { error: `Uang yang dibagi tidak cukup setelah dikurangi tabungan dan pengeluaran yang sudah terjadi (Rp${String(Math.abs(pool)).replace(/\B(?=(\d{3})+(?!\d))/g, '.')}${pool < 0 ? ' kurang' : ''})`.replace('(Rp0)', '(Rp0)') };
+  const plan = { period, startDate: r.start, endDate: r.end, amountToAllocate: amount, savingAmount: saving, priorSpent: prior, updatedAt: now };
+  let result;
+  if (active && active.startDate === t) { Object.assign(active, plan); result = active; }
+  else {
+    if (active) { active.dailyAllowance = fixedAllowanceOn(active, active.startDate); active.originalEndDate = active.endDate; active.endDate = addDays(t, -1); active.closedEarly = true; active.updatedAt = now; }
+    result = { id: id || (globalThis.crypto?.randomUUID ? crypto.randomUUID() : String(Date.now())), ...plan, createdAt: now }; data.budgetPlans.push(result);
+  }
+  result.dailyAllowance = Math.floor(pool / planDays(result));
+  return { plan: result, prior };
 }
