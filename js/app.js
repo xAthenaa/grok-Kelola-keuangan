@@ -14,7 +14,7 @@ const ui = { txFilter: { q: '', period: 'week', from: '', to: '', account: '', c
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const ROUTES = [
-  ['dashboard', 'Dashboard', '🏠'], ['transaksi', 'Transaksi', '📋'], ['akun', 'Akun', '💳'],
+  ['dashboard', 'Beranda', '🏠'], ['transaksi', 'Transaksi', '📋'], ['akun', 'Akun', '💳'],
   ['anggaran', 'Anggaran', '🎯'], ['rekap', 'Rekap', '📊'], ['pengaturan', 'Pengaturan', '⚙️']];
 const TYPE_LABEL = { income: 'Pemasukan', expense: 'Pengeluaran', transfer: 'Transfer', adjustment: 'Penyesuaian' };
 const ACC_TYPE = { cash: 'Cash', bank: 'Bank', ewallet: 'E-wallet' };
@@ -313,7 +313,7 @@ function drawOne(el) { const d = chartData.get(el.dataset.chart); if (!d) return
   if (d.monthly && el.scrollWidth > el.clientWidth) { const i = Math.max(0, d.rows.findIndex((r) => r.isToday || (!r.outside && r.future))); el.scrollLeft = Math.max(0, (el.scrollWidth / d.rows.length) * (i - 3)); } }
 if (!chartRO) window.addEventListener('resize', () => $$('[data-chart]').forEach(drawOne));
 function rowsTable(rows) {
-  return `<div class="tablewrap" tabindex="0" role="region" aria-label="Tabel jatah vs aktual per hari"><table class="daily"><caption class="sr">Jatah vs aktual per hari</caption><thead><tr><th scope="col">Hari</th><th scope="col" class="r">Jatah tetap</th><th scope="col" class="r">Aktual</th><th scope="col">Status</th></tr></thead><tbody>${rows.map((r) =>
+  return `<div class="tablewrap" tabindex="0" role="region" aria-label="Tabel jatah vs aktual per hari"><table class="daily"><caption class="sr">Jatah vs aktual per hari</caption><thead><tr><th scope="col">Hari</th><th scope="col" class="r nowrap">Jatah<span class="hide-narrow"> tetap</span></th><th scope="col" class="r">Aktual</th><th scope="col">Status</th></tr></thead><tbody>${rows.map((r) =>
     `<tr class="${r.isToday ? 'today' : ''}"><th scope="row" style="font-weight:500">${F.dayShort(r.date)} ${F.parse(r.date).getDate()}${r.isToday ? ' (hari ini)' : ''}</th><td class="r">${r.outside ? '—' : rp(r.fixed)}</td><td class="r">${r.future || r.outside ? '—' : rp(r.actual)}</td><td>${r.outside ? '<span class="badge b-none">di luar rencana</span>' : badge(r.status)}</td></tr>`).join('')}</tbody></table></div>`;
 }
 function heatmap(rows) {

@@ -149,10 +149,27 @@ for (const w of [375, 768, 1280]) { await p.setViewportSize({ width: w, height: 
   const L = await p.evaluate(() => { const q = (k) => [...document.querySelectorAll(`[data-chart] [data-kind=${k}]`)];
     const info = (els) => els.map((t) => ({ fs: parseFloat(getComputedStyle(t).fontSize || t.getAttribute('font-size')), attr: +t.getAttribute('font-size'), h: t.getBoundingClientRect().height, w: t.getBoundingClientRect().width }));
     const fut = [...document.querySelectorAll('[data-chart] g[data-kind=future]')].map((g) => !!g.querySelector('[data-kind=future-label]'));
-    return { out: info(q('outside-label')), fut: info(q('future-label')), futCols: fut, all: [...document.querySelectorAll('[data-chart] text')].map((t) => +t.getAttribute('font-size')) }; });
-  check(`labels ≥12px at ${w}px: "di luar rencana" + "Mendatang" on every future day (Sab, Min)`, L.out.length >= 1 && L.out.every((x) => x.attr >= 12 && x.h > 0) && L.futCols.length === 2 && L.futCols.every(Boolean) && L.fut.every((x) => x.attr >= 12 && x.h > 0), JSON.stringify(L));
+    return { zero: info(q('zero-label')), today: info(q('today-label')), out: info(q('outside-label')), fut: info(q('future-label')), futCols: fut, all: [...document.querySelectorAll('[data-chart] text')].map((t) => +t.getAttribute('font-size')) }; });
+  check(`labels ≥12px at ${w}px: "di luar rencana" + "Mendatang" on every future day (Sab, Min)`, L.zero.length === 3 && L.today.length === 1 && [...L.zero, ...L.today].every((x) => x.attr >= 12 && x.h > 0) && L.out.length >= 1 && L.out.every((x) => x.attr >= 12 && x.h > 0) && L.futCols.length === 2 && L.futCols.every(Boolean) && L.fut.every((x) => x.attr >= 12 && x.h > 0), JSON.stringify(L));
   await p.locator('section.card', { hasText: 'Jatah vs Aktual' }).first().screenshot({ path: `/workspace/kelola-keuangan/site-screens/chart-labels-after-${w}.png` }); }
 await p.setViewportSize({ width: 360, height: 900 }); await at('20', '#anggaran');
+// Bocil 375px: FAB tidak menutupi baris terakhir, label nav tidak terpotong, header "Jatah" satu baris
+await seed(base([ex('2026-10-20', 9000)], [plan10])); await p.setViewportSize({ width: 375, height: 812 }); await at('23', '#anggaran');
+await p.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight)); await p.waitForTimeout(150);
+const ov = await p.evaluate(() => { const fab = document.getElementById('fab').getBoundingClientRect(); const nav = document.querySelector('.bottomnav').getBoundingClientRect();
+  const rows = [...document.querySelectorAll('table.daily tbody tr')]; const last = rows.at(-1).getBoundingClientRect();
+  return { fabTop: fab.top, navTop: nav.top, lastBottom: last.bottom, overlap: !(last.bottom <= fab.top || last.top >= fab.bottom) }; });
+check('375: FAB does not overlap last table row at page end', !ov.overlap && ov.lastBottom <= ov.fabTop, JSON.stringify(ov));
+const nav = await p.evaluate(() => [...document.querySelectorAll('.bottomnav a')].map((a) => { const r = a.getBoundingClientRect(); const range = document.createRange(); range.selectNodeContents(a); const t = range.getBoundingClientRect();
+  return { label: a.textContent.trim(), clipped: t.left < Math.max(0, r.left) - 0.5 || t.right > Math.min(innerWidth, r.right) + 0.5 }; }));
+check('375: bottom nav labels not clipped, "Beranda" (not Dashboard)', nav.every((n) => !n.clipped) && nav[0].label.includes('Beranda') && !nav.some((n) => n.label.includes('Dashboard')), JSON.stringify(nav));
+const th = await p.evaluate(() => { const t = [...document.querySelectorAll('table.daily thead th')][1]; const lh = parseFloat(getComputedStyle(t).lineHeight) || 20; const range = document.createRange(); range.selectNodeContents(t);
+  return { text: t.textContent, rects: [...range.getClientRects()].filter((r) => r.width > 2).map((r) => Math.round(r.top)).filter((v, i, a) => a.indexOf(v) === i).length, visible: (t.querySelector('.hide-narrow')?.getBoundingClientRect().width ?? 99) <= 1 ? 'Jatah' : t.innerText.trim() }; });
+check('375: header shows "Jatah" on one line, full "Jatah tetap" for screen readers', th.rects === 1 && th.visible === 'Jatah' && th.text === 'Jatah tetap', JSON.stringify(th));
+await p.screenshot({ path: '/workspace/kelola-keuangan/site-screens/mobile-375-after.png', fullPage: false });
+await p.setViewportSize({ width: 1280, height: 900 }); await p.waitForTimeout(200);
+check('1280: header shows full "Jatah tetap" (suffix visible)', (await p.evaluate(() => document.querySelector('table.daily thead .hide-narrow').getBoundingClientRect().width)) > 10);
+await p.setViewportSize({ width: 360, height: 900 });
 // Bocil: sorotan baris "hari ini" menutup SELURUH baris (semua sel), juga di 360px
 for (const w of [360, 1280]) { await p.setViewportSize({ width: w, height: 900 }); await p.waitForTimeout(200);
   const hl = await p.evaluate(() => { const tr = document.querySelector('table.daily tr.today'); if (!tr) return null;

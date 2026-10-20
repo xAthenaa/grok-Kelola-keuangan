@@ -28,7 +28,7 @@ export const chartHeight = (width) => (width >= 640 ? 260 : 220);
 const topRounded = (x, y, w, h, r) => { r = Math.min(r, w / 2, h); return `M${x.toFixed(1)},${(y + h).toFixed(1)} V${(y + r).toFixed(1)} Q${x.toFixed(1)},${y.toFixed(1)} ${(x + r).toFixed(1)},${y.toFixed(1)} H${(x + w - r).toFixed(1)} Q${(x + w).toFixed(1)},${y.toFixed(1)} ${(x + w).toFixed(1)},${(y + r).toFixed(1)} V${(y + h).toFixed(1)} Z`; };
 export function barChartSVG(rows, { width = 600, monthly = false, height = chartHeight(width) } = {}) {
   const n = rows.length; if (!n) return '';
-  const padL = 56, padR = 8, padT = 14, padB = monthly ? 24 : 36;
+  const padL = 56, padR = 8, padT = 14, padB = monthly ? 24 : 42;
   const minCol = monthly ? 16 : 0; const W = Math.max(width, monthly ? padL + padR + n * minCol : 0);
   const colW = (W - padL - padR) / n; const bw = Math.max(4, Math.min(48, colW * 0.6));
   const vals = rows.flatMap((r) => (r.outside ? [] : [r.fixed || 0, r.future ? 0 : r.actual || 0, !r.future && r.dyn > 0 ? r.dyn : 0]));
@@ -58,7 +58,7 @@ export function barChartSVG(rows, { width = 600, monthly = false, height = chart
         const hh = Math.max(2, baseY - y(r.actual)); g += `<path d="${topRounded(x, baseY - hh, bw, hh, 6)}" fill="${ST_COLOR[r.status]}" data-kind="actual" data-status="${r.status}" data-w="${bw.toFixed(1)}"/>`;
       } else {
         g += `<rect x="${x.toFixed(1)}" y="${baseY - 3}" width="${bw.toFixed(1)}" height="3" rx="1.5" fill="${ST_COLOR.safe}" data-kind="zero"/>`;
-        if (!monthly) g += `<text x="${cx.toFixed(1)}" y="${baseY - 8}" text-anchor="middle" font-size="10" fill="#166534" font-weight="600">Rp0</text>`;
+        if (!monthly) g += `<text x="${cx.toFixed(1)}" y="${baseY - 8}" text-anchor="middle" font-size="12" fill="#166534" font-weight="600" data-kind="zero-label">Rp0</text>`;
       }
       // Jatah tetap: garis tangga kontinu antar hari dalam rencana
       const fy = y(r.fixed).toFixed(1), xl = (padL + colW * i).toFixed(1), xr = (padL + colW * (i + 1)).toFixed(1);
@@ -67,8 +67,8 @@ export function barChartSVG(rows, { width = 600, monthly = false, height = chart
     }
     cols += `<g data-col="${r.date}" data-kind="${kind}"><title>${columnTitle(r)}</title><rect x="${(padL + colW * i).toFixed(1)}" y="${padT}" width="${colW.toFixed(1)}" height="${plotH}" fill="transparent"/>${g}</g>`;
     const d = parse(r.date); const lab = monthly ? d.getDate() : DAYS[d.getDay()];
-    if (!monthly || d.getDate() === 1 || d.getDate() % 5 === 0) labels += `<text x="${cx.toFixed(1)}" y="${height - (monthly ? 6 : 14)}" text-anchor="middle" font-size="12" fill="#6B7280" ${r.isToday ? 'font-weight="700"' : ''}>${lab}</text>`;
-    if (!monthly && r.isToday) labels += `<text x="${cx.toFixed(1)}" y="${height - 2}" text-anchor="middle" font-size="9" fill="#166534">hari ini</text>`;
+    if (!monthly || d.getDate() === 1 || d.getDate() % 5 === 0) labels += `<text x="${cx.toFixed(1)}" y="${height - (monthly ? 6 : 20)}" text-anchor="middle" font-size="12" fill="#6B7280" ${r.isToday ? 'font-weight="700"' : ''}>${lab}</text>`;
+    if (!monthly && r.isToday) labels += `<text x="${cx.toFixed(1)}" y="${height - 2}" text-anchor="middle" font-size="12" fill="#166534" data-kind="today-label">hari ini</text>`;
   });
   // Jatah dinamis: putus-putus, warna berbeda; digeser 3px ke atas bila sama dengan jatah tetap agar tetap terlihat
   const dyn = dynPts.map((p) => `${p.x.toFixed(1)},${(y(p.v) - (p.v === p.fixed ? 3 : 0)).toFixed(1)}`);

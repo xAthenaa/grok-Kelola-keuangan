@@ -108,3 +108,9 @@ dialog .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px;fl
 
 /* BUG-10: legenda grafik ringkas, maks ±2 baris di HP */
 .legend.row{gap:2px 10px!important;font-size:12px}.legend.row li{padding:1px 0;gap:5px}.legend.row i{width:10px;height:10px;flex-basis:10px}
+
+/* Bocil 375px: FAB tidak menutupi baris terakhir; header tabel satu baris */
+@media (max-width:1023px){.content{padding-bottom:calc(60px + 88px + env(safe-area-inset-bottom,0px))}}
+th.nowrap{white-space:nowrap}
+@media (max-width:639px){.hide-narrow{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
+.bottomnav a{white-space:nowrap;overflow:visible}

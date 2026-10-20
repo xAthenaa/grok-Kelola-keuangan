@@ -30,6 +30,6 @@ eq('height 220 HP / 260 desktop', [chartHeight(320), chartHeight(900)], [220, 26
   eq('over jatah: y top 40rb above max 30.000', /data-top="40000"/.test(svg), true);
   eq('future bars never filled (height uses 0, not jatah)', count(svg, /data-kind="actual"/g), 3); }
 for (const w of [320, 375, 768, 1280]) { const s = barChartSVG(mk('2026-10-23', [['2026-10-20', 9000]]), { width: w });
-  const fs = [...s.matchAll(/font-size="([\d.]+)"[^>]*data-kind="(outside|future)-label"/g)].map((m) => +m[1]);
-  eq(`labels 12px at ${w}px: 1×"di luar rencana" + 2×"Mendatang"`, [s.match(/data-kind="future-label"/g)?.length, fs.length >= 3 && fs.every((f) => f >= 12)], [2, true]); }
+  const fs = [...s.matchAll(/font-size="([\d.]+)"[^>]*data-kind="(outside|future|zero|today)-label"/g)].map((m) => +m[1]);
+  eq(`labels 12px at ${w}px: "di luar rencana", 2×"Mendatang", 3×"Rp0", "hari ini"`, [s.match(/data-kind="future-label"/g)?.length, s.match(/data-kind="zero-label"/g)?.length, s.match(/data-kind="today-label"/g)?.length, fs.length >= 6 && fs.every((f) => f >= 12)], [2, 3, 1, true]); }
 console.log(`chart-unit.mjs: ${total - fail}/${total} checks passed`); process.exit(fail ? 1 : 0);
